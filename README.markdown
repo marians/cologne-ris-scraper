@@ -18,9 +18,16 @@ SessionNet Instanzen einsetzen lassen.
 
 Ein Scraper ist ein Programm, dass die Daten aus einer Website extrahiert und in strukturierter Form speichert.
 
+###Welchen Entwicklungsstand hat der Scraper?
+
+Es werden noch nicht alle wesentlichen Daten erfasst. Aktuell fehlen vor allem noch die Tagesordnungspunkte der Sitzungen.
+
+Bei den Dokumenten-Attachments werden bisher nur die Volltexte von PDFs erfasst. Andere Typen wie z.B. JPEG-Bilder oder
+Dokumenten-Scans im TIF-Format werden noch ignoriert.
+
 ###Welche Programmiersprache nutzt das Programm?
 
-Der Scraper ist in Python geschrieben
+Der Scraper ist in Python geschrieben.
 
 ###Welche Python-Version wird benötigt?
 
@@ -37,6 +44,11 @@ Bisher wurde der Scraper nur mit Python 2.7 getestet.
 ###Was wird außerdem benötigt?
 
 Zum Speichern der Daten wird aktuell ein MySQL-Server benötigt.
+
+###Sind die Daten selbst irgendwo verfügbar?
+
+Aktuell noch nicht. Sobald diese eine ausreichende Vollständigkeit erreicht haben, sollen sie irgendwo als MySQL-Dump oder
+CSV Download verfügbar gemacht werden. Weitere Informationen werden dann hier zu finden sein.
 
 ###Unter welcher Lizenz steht der Quellcode?
 
