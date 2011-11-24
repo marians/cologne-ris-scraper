@@ -61,7 +61,9 @@ class DataStore:
 			placeholders = []
 			for el in thedict.keys():
 				placeholders.append("%s")
-				if isinstance(thedict[el], int) or isinstance(thedict[el], long):
+				if thedict[el] is None:
+					values.append(thedict[el])
+				elif isinstance(thedict[el], int) or isinstance(thedict[el], long):
 					values.append(thedict[el])
 				else:
 					values.append(thedict[el].encode('utf-8'))
@@ -73,7 +75,9 @@ class DataStore:
 				for el in thedict.keys():
 					if el not in unique_keys:
 						updates.append(el + "=%s")
-						if isinstance(thedict[el], int) or isinstance(thedict[el], long):
+						if thedict[el] is None:
+							values.append(thedict[el])
+						elif isinstance(thedict[el], int) or isinstance(thedict[el], long):
 							values.append(thedict[el])
 						else:
 							values.append(thedict[el].encode('utf-8'))
