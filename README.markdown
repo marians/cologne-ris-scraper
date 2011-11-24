@@ -45,6 +45,15 @@ Bisher wurde der Scraper nur mit Python 2.7 getestet.
 
 Zum Speichern der Daten wird aktuell ein MySQL-Server benötigt.
 
+###Wie funktioniert die Installation?
+
+1. Benötigte Python-Module installieren
+2. Leere MySQL-Datenbank anlegen
+3. Die Datei setup_mysql.sql in der neuen Datenbank ausführen. Damit werden die benötigten Tabellen angelegt.
+4. Die Datenbank-Konfiguration in scrape.py anpassen
+
+Danach sollte sich der Scraper mit dem Kommando "python scrape.py" an der Kommandozeile starten lassen.
+
 ###Sind die Daten selbst irgendwo verfügbar?
 
 Aktuell noch nicht. Sobald diese eine ausreichende Vollständigkeit erreicht haben, sollen sie irgendwo als MySQL-Dump oder
