@@ -287,7 +287,7 @@ def get_document_details(dtype, id):
 		<tr><td>Betreff:</td><td>{{}}</td></tr>
 		''', html)
 	if dtype == 'request':
-		data[prefix + 'committees'] = scrape('''
+		data['committees'] = scrape('''
 			<tr><td>Gremien:</td><td>{{}}</td></tr>
 			''', html)
 
@@ -466,12 +466,12 @@ def is_attachment_in_db(id):
 if __name__ == '__main__':
 	db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
 	# get submission document details
-	docs = db.get_rows('SELECT * FROM submissions WHERE submission_identifier IS NULL OR submission_identifier = "" ORDER BY RAND() LIMIT 50')
+	docs = db.get_rows('SELECT * FROM submissions WHERE submission_identifier IS NULL OR submission_identifier = "" ORDER BY RAND()')
 	for doc in docs:
 		get_document_details('submission', doc['submission_id'])
 
 	# get request document details
-	requests = db.get_rows('SELECT * FROM requests WHERE request_identifier IS NULL OR request_identifier = "" ORDER BY RAND() LIMIT 50')
+	requests = db.get_rows('SELECT * FROM requests WHERE request_identifier IS NULL OR request_identifier = "" ORDER BY RAND()')
 	for request in requests:
 		get_document_details('request', request['request_id'])
 
