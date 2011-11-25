@@ -350,7 +350,7 @@ def get_attachments(url, forms_list):
 			if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
 				content = get_text_from_pdfdata(data)
 			if content is None or (content is not None and content is not False):
-				if content is not None and content is not False
+				if content is not None and content is not False:
 					ret[attachment_id]['attachment_content'] = content
 				db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
 			br.back()
