@@ -11,6 +11,9 @@ DBUSER = 'root'
 DBPASS = ''
 DBNAME = 'cologne-ris'
 
+
+# End of configuration
+
 import sys
 import os
 import random
@@ -345,8 +348,11 @@ def get_attachments(url, forms_list):
 			if 'Content-Disposition' in headers:
 				ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
 			if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
-				ret[attachment_id]['attachment_content'] = get_text_from_pdfdata(data)
-			db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
+				content = get_text_from_pdfdata(data)
+			if content is None or (content is not None and content is not False):
+				if content is not None and content is not False
+					ret[attachment_id]['attachment_content'] = content
+				db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
 			br.back()
 	return ret
 
@@ -360,7 +366,10 @@ def get_text_from_pdfdata(data):
 	#fp = open(inputbuffer, 'rb')
 	parser = PDFParser(fp)
 	parser.set_document(doc)
-	doc.set_parser(parser)
+	try:
+		doc.set_parser(parser)
+	except:
+		return False
 	doc.initialize('')
 	#interpreter = PDFPageInterpreter(rsrc, device)
 	interpreter = PDFPageInterpreter(rsrc, device)
