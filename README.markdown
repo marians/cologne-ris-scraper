@@ -20,10 +20,22 @@ Ein Scraper ist ein Programm, dass die Daten aus einer Website extrahiert und in
 
 ###Welchen Entwicklungsstand hat der Scraper?
 
-Es werden noch nicht alle wesentlichen Daten erfasst. Aktuell fehlen vor allem noch die Tagesordnungspunkte der Sitzungen.
+Der Scraper kann noch nicht als "fertig" bezeichnet werden.
 
-Bei den Dokumenten-Attachments werden bisher nur die Volltexte von PDFs erfasst. Andere Typen wie z.B. JPEG-Bilder oder
-Dokumenten-Scans im TIF-Format werden noch ignoriert.
+* Es werden noch nicht alle wesentlichen Daten erfasst.
+* Aktuell fehlen vor allem noch die Tagesordnungspunkte der Sitzungen.
+* Bei den Dokumenten-Attachments werden bisher nur die Volltexte von PDFs erfasst. Bei anderen Typen 
+  wie z.B. JPEG-Bildern oder Dokumenten-Scans im TIF-Format werden zwar die Metadaten erfasst, aber
+  die Dokumentendaten werden nicht gespeichert.
+* Bei Anträgen wird das Gremium (request.committee) als String gespeichert. Hier sollte (zusätzlich) ein
+  numerischer Fremdschlüssel angelegt werden (committee_id)
+* Die Beziehung zwischen Anträgen (requests) bzw. Vorlagen (submissions) und Anlagen (attachments) ist
+  nicht SQL-Abfrage-tauglich. Aktuell werden alle attachent_ids als Leerzeichen-separierter String in ein Feld
+  geschrieben.
+* Es wird nicht identifiziert, welcher Anhang unmittelbar zu einem Antrag bzw. einer Vorlage gehört
+  (also z.B. den ursprünglichen Antrag selbst enthält) und welche Attachments z.B. Einladungen zu 
+  Sitzungen oder Beschlusstexte enthält, die mit dem Antrag zu tun haben. Die Rolle eines Anhangs wird
+  also nicht ermittelt.
 
 ###Welche Programmiersprache nutzt das Programm?
 
