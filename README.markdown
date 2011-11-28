@@ -26,9 +26,6 @@ Der Scraper kann noch nicht als "fertig" bezeichnet werden.
 * Bei den Dokumenten-Attachments werden bisher nur die Volltexte von PDFs erfasst. Bei anderen Typen 
   wie z.B. JPEG-Bildern oder Dokumenten-Scans im TIF-Format werden zwar die Metadaten erfasst, aber
   die Dokumentendaten werden nicht gespeichert.
-* Die Beziehung zwischen Anträgen (requests) bzw. Vorlagen (submissions) und Anlagen (attachments) ist
-  nicht SQL-Abfrage-tauglich. Aktuell werden alle attachent_ids als Leerzeichen-separierter String in ein Feld
-  geschrieben.
 
 ###Welche Programmiersprache nutzt das Programm?
 
