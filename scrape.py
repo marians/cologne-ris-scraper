@@ -6,13 +6,18 @@ scrape.py
 Created by Marian Steinbach on 2011-11-23.
 """
 
+### Configuration
+
+# Database
 DBHOST = 'localhost'
 DBUSER = 'root'
 DBPASS = ''
 DBNAME = 'cologne-ris'
 
+# Base URL
+BASEURL = 'http://ratsinformation.stadt-koeln.de/'
 
-# End of configuration
+### End of configuration
 
 import sys
 import os
@@ -59,7 +64,7 @@ class DataStore:
 			data = [ data ]
 		for thedict in data:
 			values = []
-			sql = 'INSERT INTO ' + table +' ('+ ', '.join(thedict.keys()) +')'
+			sql = 'INSERT IGNORE INTO ' + table +' ('+ ', '.join(thedict.keys()) +')'
 			sql2 = ' VALUES ('
 			placeholders = []
 			for el in thedict.keys():
@@ -73,7 +78,7 @@ class DataStore:
 			sql2 += ", ".join(placeholders) + ')'
 			sql += sql2
 			if unique_keys is not None and unique_keys != []:
-				sql += ' ON DUPLICATE KEY UPDATE '
+				sql3 = ' ON DUPLICATE KEY UPDATE '
 				updates = []
 				for el in thedict.keys():
 					if el not in unique_keys:
@@ -84,7 +89,9 @@ class DataStore:
 							values.append(thedict[el])
 						else:
 							values.append(thedict[el].encode('utf-8'))
-				sql += ", ".join(updates)
+				if len(updates) > 0:
+					sql3 += ", ".join(updates)
+					sql += sql3
 			#print sql
 			self.cursor.execute(sql, values)
 
@@ -99,22 +106,70 @@ def result_string(string):
 		or returns the original unicode string if not available.
 	"""
 	types = {
-		u'unge\xe4ndert beschlossen': 'DECIDED_UNCHANGED',
-		u'ge\xe4ndert beschlossen': 'DECIDED_CHANGED',
-		u'Kenntnis genommen': 'ACKNOWLEDGED',
-		u'zur\xfcckgestellt': 'DEFERRED',
-		u'Sache ist erledigt': 'COMPLETED'
+		u'unge\xe4ndert beschlossen': 'BESCHLOSSEN_UNVERAENDERT',
+		u'ge\xe4ndert beschlossen': 'BESCHLOSSEN_GEAENDERT',
+		u'Alternative beschlossen': 'BESCHLOSSEN_ALTERNATIVE',
+		u'unter Vorbehalt beschlossen': 'BESCHLOSSEN_VORBEHALT',
+		u'unge\xe4ndert empfohlen': 'EMPFOHLEN_UNVERAENDERT',
+		u'Kenntnis genommen': 'KENNTNISNAHME',
+		u'zur\xfcckgestellt': 'ZURUECKGESTELLT',
+		u'Sache ist erledigt': 'ERLEDIGT',
+		u'zur weiteren Bearbeitung in die Verwaltung \xfcberwiesen': 'UEBERWIESEN_VERWALTUNG',
+		u'im ersten Durchgang verwiesen': 'UEBERWIESEN_ERSTERDURCHGANG',
+		u'ohne Votum in nachfolgende Gremien': 'UEBERWIESEN_GREMIEN_OHNEVOTUM',
+		u'verwiesen in nachfolgende Gremien (ohne R\xfccklauf)': 'UEBERWIESEN_GREMIEN_OHNERUECKLAUF',
+		u'verwiesen in nachfolgende Gremien': 'UEBERWIESEN_GREMIEN',
+		u'ohne Votum verwiesen mit erneuter Wiedervorlage': 'UEBERWIESEN_WIEDERVORLAGE_OHNEVOTUM',
+		u'abgelehnt (in der Vorberatung)': 'ABGELEHNT_VORBERATUNG',
+		u'endg\xfcltig abgelehnt': 'ABGELEHNT_ENTGUELTIG',
+		u'endg\xfcltig zur\xfcckgezogen': 'ZURUECKGEZOGEN_ENTGUELTIG',
+		u'\xdcbergang zum n\xe4chsten Tagesordnungspunkt': 'NAECHSTER_TAGESORDNUNGSPUNKT',
+		u'mit \xc4nderungen empfohlen': 'EMPFOHLEN_GAENDERT',
 	}
 	if string in types:
 		return types[string]
+	print "ERROR: Unknown result type string", [string]
+	sys.exit()
+
+def attachment_role_string(string):
+	"""
+		Returns the correct normalized attachment role category
+	"""
+	types = {
+		u'Abstimmung': 'ABSTIMMUNG',
+		u'Mitteilung/Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+		u'Mitteilung / Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+		u'Mitteilung BV': 'MITTEILUNG_BV',
+		u'Beantwortung einer m\xfcndl. Anfrage Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+		u'Mitteilung/Beantwortung BV': 'MITTEILUNG_BV',
+		u'Mitteilung/Beantwortung Rat': 'MITTEILUNG_RAT',
+		u'Mitteilung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+		u'Mitteilungsvorlage': 'MITTEILUNGSVORLAGE',
+		u'Beschlussvorlage': 'BESCHLUSSVORLAGE',
+		u'Beschlussvorlage Rat': 'BESCHLUSSVORLAGE_RAT',
+		u'Beschlussvorlage Ausschuss': 'BESCHLUSSVORLAGE_AUSSCHUSS',
+		u'Beschlussvorlage Bezirksvertretung': 'BESCHLUSSVORLAGE_BEZIRKSVERTRETUNG',
+		u'Antrag BV': 'ANTRAG_BV',
+		u'Anfrage BV': 'ANFRAGE_BV',
+		u'Dringlichkeitsvorlage Rat und Hauptausschuss': 'DRINGLICHKEITSVORLAGE_RAT_HAUPTAUSSCHUSS',
+	}
+	if string in types:
+		return types[string]
+	print "WARN: Unknown attachment type string", [string]
 	return string
+
+def get_committee_id_by_name(name):
+	global db
+	result = db.get_rows('SELECT committee_id FROM committees WHERE committee_title=%s' % name)
+	if len(result) == 1:
+		return result[0]['committee_id']
 
 def get_session_ids(year, month):
 	"""
 		Get ids of all currently available sessions (Sitzungen)
 	"""
 	ids = []
-	url = 'http://ratsinformation.stadt-koeln.de/si0040.asp?__cmonat='+str(month)+'&__cjahr='+str(year)
+	url = BASEURL + 'si0040.asp?__cmonat='+str(month)+'&__cjahr='+str(year)
 	data = scrape("""
 	{*
 		<td><a href="to0040.asp?__ksinr={{ [ksinr]|int }}"></a></td>
@@ -124,12 +179,15 @@ def get_session_ids(year, month):
 		ids.append(item)
 	return ids
 
+def get_session_detail_url(session_id):
+	return BASEURL + 'to0040.asp?__ksinr=' + str(session_id)
+
 def get_session_details(id):
 	"""
 		Get detail information on a session (Sitzung)
 	"""
 	global db
-	url = 'http://ratsinformation.stadt-koeln.de/to0040.asp?__ksinr=' + str(id)
+	url = get_session_detail_url(id)
 	html = urllib2.urlopen(url).read()
 	data = {}
 
@@ -167,12 +225,12 @@ def get_session_details(id):
 	data['session_time_end'] = endtime
 
 	db.save_rows('sessions', data, ['session_id'])
-	if data['committee_id'] is not None and data['committee_id'] is not '':
-		get_committee_details(data['committee_id'])
-	agenda = get_agenda(html)
+	# TODO: Prüfe, ob das Gremium schon vollständig in der Datenbank ist und scrape nur bei Bedarf
+	#if data['committee_id'] is not None and data['committee_id'] is not '':
+	#	get_committee_details(data['committee_id'])
+	get_agenda(id, html)
 
-
-def get_agenda(html):
+def get_agenda(session_id, html):
 	"""
 		Reads agenda items from session detail page HTML.
 
@@ -183,81 +241,191 @@ def get_agenda(html):
 		- third, all attachments are gatherd in "files"
 		Then the structures are merged by agenda item number.
 	"""
-	# 1. Alle Agendaeinträge mit Nummer, Beschreibung und Ergebnis auslesen
-	all = scrape('''
+	global db
+	html = html.replace('&nbsp;', ' ')
+	html = html.replace('<br>', '; ')
+	
+	# 1. Öffentlichen Tagesordnungspunkte mit ID auslesen (immer zwei aufeinander folgende Tabellenzeilen)
+	publicto = scrape('''
 	{*
-		<tr class="smcrow{{ [agendaitem].rowtype|int }}">
-			<td>{{ [agendaitem].nr }}</td>
-			<td>{{ [agendaitem].beschreibung }}</td>
-			<td>{{ [agendaitem].more }}</td>
+		<tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
+			<td>{{ [agendaitem].f1 }}</td>
+			<td>{{ [agendaitem].f2 }}</td>
+			<td>{{ [agendaitem].f3 }}</td>
+		</tr>
+		<tr>
+			<td>{{ [agendaitem].f4 }}</td>
+			<td>{{ [agendaitem].f5 }}</td>
+			<td>{{ [agendaitem].f6 }}</td>
 		</tr>
 	*}
 	''', html)
-	# TODO: obiges Pattern erfasst nicht die Agenda-Einträge, die am Ende der Liste als
-	# nicht-öffentliche Punkte mit nur zwei Tabellenspalten hängen.
-
-	agenda = {}
-	current_number = '0'
-	agenda[current_number] = { 'inhalt': [], 'docs': []}
-	if 'agendaitem' in all:
-		for item in all['agendaitem']:
-			if 'nr' in item and item['nr'] != '':
-				current_number = item['nr']
-				agenda[current_number] = { 'inhalt': [], 'docs': []}
-			if 'beschreibung' in item and item['beschreibung'] is not None and item['beschreibung'] != '':
-				if item['beschreibung'].find('Ergebnis: ') == 0:
-					agenda[current_number]['ergebnis'] = result_string(item['beschreibung'][10:])
-				else:
-					agenda[current_number]['inhalt'].append({'beschreibung': item['beschreibung']})
-			if 'more' in item and item['more'] != '':
-				agenda[current_number]['docs'].append(item['more'])
-	for nr in agenda:
-		if agenda[nr]['docs'] == []:
-			del agenda[nr]['docs']
-		if agenda[nr]['inhalt'] == []:
-			del agenda[nr]['inhalt']
-		#print nr, agenda[nr]
-	#print len(agenda), 'Tagesordnungspunkte'
-
-	# 2. Verlinkte Vorlagen auslesen
-	vorlagen = scrape('''
+	all_items_by_id = {}
+	if 'agendaitem' in publicto and isinstance(publicto['agendaitem'], list):
+		# Bereinigung
+		for entry in publicto['agendaitem']:
+			if 'id' not in entry:
+				continue
+			all_items_by_id[entry['id']] = { 
+				'agendaitem_id': entry['id'],
+				'agendaitem_public': 1,
+				'agendaitem_identifier': None,
+				'session_id': session_id,
+				'agendaitem_result': None
+			}
+			if 'f1' in entry and entry['f1'] != '':
+				all_items_by_id[entry['id']]['agendaitem_identifier'] = entry['f1']
+			if 'f2' in entry and entry['f2'] != '':
+				all_items_by_id[entry['id']]['agendaitem_subject'] = entry['f2']
+			if 'f5' in entry and entry['f5'] != '' and entry['f5'].find('Ergebnis:') != -1:
+				all_items_by_id[entry['id']]['agendaitem_result'] = result_string(entry['f5'].replace('Ergebnis: ', ''))
+	
+	# 2. Nichtöffentliche Tagesordnungspunkte mit ID lesen
+	nonpublicto = scrape('''
+	<h2 class="smc_h2">Nicht &ouml;ffentlicher Teil:</h2>
 	{*
-		<a href="vo0050.asp?__kvonr={{ [agendaitem].kvonr|int }}&amp;voselect={{ [agendaitem].voselect|int }}">{{ [agendaitem].inhalt }}</a>
+		<tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
+			<td>{{ [agendaitem].f1 }}</td>
+			<td>{{ [agendaitem].f2 }}</td>
+		</tr>
 	*}
 	''', html)
-	linked_vorlagen = {}
-	if 'agendaitem' in vorlagen:
-		for row in vorlagen['agendaitem']:
-			linked_vorlagen[row['inhalt']] = {'vorlage_id': row['kvonr']}
-			get_document_details('submission', row['kvonr'])
-
-	# 3. Verlinkte Antraege auslesen
-	antraege = scrape('''
+	if nonpublicto is not None and ('agendaitem' in nonpublicto) and (nonpublicto['agendaitem'] is not None):
+		if isinstance(nonpublicto['agendaitem'], list):
+			for entry in nonpublicto['agendaitem']:
+				if 'id' not in entry:
+					continue
+				all_items_by_id[entry['id']] = { 
+					'agendaitem_id': entry['id'],
+					'agendaitem_public': 0,
+					'agendaitem_identifier': None,
+					'session_id': session_id
+				}
+				if 'f1' in entry and entry['f1'] != '':
+					all_items_by_id[entry['id']]['agendaitem_identifier'] = entry['f1']
+				if 'f2' in entry and entry['f2'] != '':
+					all_items_by_id[entry['id']]['agendaitem_subject'] = entry['f2']
+	# Alle Tagesordnungspunkte in die Datenbank schreiben
+	db.save_rows('agendaitems', all_items_by_id.values(), ['agendaitem_id'])
+	
+	# 3. Verlinkung zwischen Tagesordnungspunkten und Anträgen (requests) bzw. Vorlagen (submissions) auslesen
+	linkedto = scrape('''
 	{*
-		<a href="ag0050.asp?__kagnr={{ [agendaitem].kagnr|int }}&amp;voselect={{ [agendaitem].voselect|int }}">{{ [agendaitem].inhalt }}</a>
+		<tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
+			<td></td>
+			<td>
+				{*
+					<a href="vo0050.asp?__kvonr={{ [agendaitem].[submissions].kvonr|int }}&amp;voselect={{ [agendaitem].[submissions].voselect|int }}">{{ [agendaitem].[submissions].subject }}</a>
+				*}
+				{*
+					<a href="ag0050.asp?__kagnr={{ [agendaitem].[requests].kagnr|int }}&amp;voselect={{ [agendaitem].[requests].voselect|int }}">{{ [agendaitem].[requests].subject }}</a>
+				*}
+			</td>
+		</tr>
 	*}
 	''', html)
-	linked_antraege = {}
-	if 'agendaitem' in antraege:
-		for row in antraege['agendaitem']:
-			linked_antraege[row['inhalt']] = {'antrag_id': row['kagnr']}
-			get_document_details('request', row['kagnr'])
+	request_links = []
+	submission_links = []
+	if 'agendaitem' in linkedto and isinstance(linkedto['agendaitem'], list):
+		for entry in linkedto['agendaitem']:
+			if not 'id' in entry:
+				continue
+			if ('submissions' in entry and entry['submissions'] != []) or ('requests' in entry and entry['requests'] != []):
+				if 'submissions' in entry:
+					for doc in entry['submissions']:
+						submission_links.append({'agendaitem_id': entry['id'], 'submission_id': doc['kvonr']})
+				if 'requests' in entry:
+					for doc in entry['requests']:
+						request_links.append({'agendaitem_id': entry['id'], 'request_id': doc['kagnr']})
+	# Alle Verknüfungen in die Datenbank schreiben
+	db.save_rows('agendaitems2submissions', submission_links, ['agendaitem_id', 'submission_id'])
+	db.save_rows('agendaitems2requests', request_links, ['agendaitem_id', 'request_id'])
+	
+	# 4. Links von Agendaitem-IDs zu Attachments auslesen
+	attachmentto = scrape('''
+	{*
+		<tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
+			<td/>
+			<td/>
+			<td>
+				{*
+					<a href="javascript:document.{{ [agendaitem].[docs1].formname }}.submit();">{{ [agendaitem].[docs1].linktitle }}</a>
+				*}
+			</td>
+		</tr>
+		<tr>
+			<td/>
+			<td/>
+			<td>
+				{*
+					<a href="javascript:document.{{ [agendaitem].[docs2].formname }}.submit();">{{ [agendaitem].[docs2].linktitle }}</a>
+				*}
+			</td>
+		</tr>
+	*}
+	''', html)
+	attachements_by_id = {} # wird hier aufgefüllt
+	if 'agendaitem' in attachmentto and isinstance(attachmentto['agendaitem'], list):
+		# Bereinigung
+		for entry in attachmentto['agendaitem']:
+			if not 'id' in entry:
+				continue
+			if ('docs1' in entry and entry['docs1'] != []) or ('docs2' in entry and entry['docs2'] != []):
+				attachements_by_id[entry['id']] = []
+				if 'docs1' in entry:
+					for doc in entry['docs1']:
+						attachements_by_id[entry['id']].append(doc)
+				if 'docs2' in entry:
+					for doc in entry['docs2']:
+						attachements_by_id[entry['id']].append(doc)
+	new_attachment_formnames = []
+	for id in attachements_by_id:
+		for attachment in attachements_by_id[id]:
+			#print id, attachment
+			if 'formname' in attachment and 'linktitle' in attachment:
+				role = attachment_role_string( re.sub(r'\s+\[[^\]]+\]', '', attachment['linktitle'])
+				if role != 'Abstimmung':
+					dataset = {
+						'agendaitem_id': id,
+						'attachment_id': int(attachment['formname'][3:]),
+						'attachment_role': attachment['linktitle'])
+					}
+					db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
+					if not is_attachment_in_db(int(attachment['formname'][3:])):
+						new_attachment_formnames.append(attachment['formname'])
+	if len(new_attachment_formnames) > 0:
+		get_attachments(get_session_detail_url(session_id), new_attachment_formnames)
+	# TODO: Attachments außerhalb der Tagesordnung erfassen (Einladung, Niederschrift)
 
-	# Tagesordnungspunkte und Vorlagen/Antraege zusammenbringen
-	for nr in agenda:
-		#print "Agendaitem:", nr
-		if 'inhalt' in agenda[nr]:
-			for i in range(0, len(agenda[nr]['inhalt'])):
-				#print i, agenda[nr]['inhalt'][i]
-				if agenda[nr]['inhalt'][i]['beschreibung'] in linked_vorlagen:
-					if 'vorlage_id' in linked_vorlagen[agenda[nr]['inhalt'][i]['beschreibung']]:
-						agenda[nr]['inhalt'][i]['vorlage_id'] = linked_vorlagen[agenda[nr]['inhalt'][i]['beschreibung']]['vorlage_id']
-				elif agenda[nr]['inhalt'][i]['beschreibung'] in linked_antraege:
-					if 'antrag_id' in linked_antraege[agenda[nr]['inhalt'][i]['beschreibung']]:
-						agenda[nr]['inhalt'][i]['antrag_id'] = linked_antraege[agenda[nr]['inhalt'][i]['beschreibung']]['antrag_id']
-				#else:
-				#	print "### Kein passender Antrag und keine passende Vorlage hierzu"
-	return agenda
+	
+
+
+def is_document_complete(dtype, id):
+	"""
+		Checks whether the document (request or submission) with the given id
+		is complete in the database or not
+	"""
+	global db
+	sql = False
+	if dtype == 'request':
+		sql = '''SELECT request_id FROM requests 
+			WHERE request_id=%s 
+			AND committees IS NOT NULL
+			AND request_date IS NOT NULL
+			AND request_identifier IS NOT NULL
+			AND request_subject IS NOT NULL'''
+	if dtype == 'submission':
+		sql = '''SELECT submission_id FROM submissions 
+			WHERE submission_id=%s 
+			AND submission_type IS NOT NULL
+			AND submission_date IS NOT NULL
+			AND submission_identifier IS NOT NULL
+			AND submission_subject IS NOT NULL'''
+	if sql:
+		result = db.get_rows(sql % id)
+		if len(result) == 1:
+			return True
+		return False
 
 def get_document_details(dtype, id):
 	"""
@@ -267,10 +435,10 @@ def get_document_details(dtype, id):
 	data = {}
 	prefix = ''
 	if dtype == 'request':
-		url = 'http://ratsinformation.stadt-koeln.de/ag0050.asp?__kagnr=' + str(id)
+		url = BASEURL + 'ag0050.asp?__kagnr=' + str(id)
 		prefix = 'request_'
 	elif dtype == 'submission':
-		url = 'http://ratsinformation.stadt-koeln.de/vo0050.asp?__kvonr=' + str(id)
+		url = BASEURL + 'vo0050.asp?__kvonr=' + str(id)
 		prefix = 'submission_'
 	data[prefix + 'id'] = id
 	html = urllib2.urlopen(url).read()
@@ -280,9 +448,6 @@ def get_document_details(dtype, id):
 	data[prefix + 'identifier'] = scrape('''
 		<tr><td>Name:</td><td>{{}}</td></tr>
 		''', html)
-	data[prefix + 'type'] = scrape('''
-		<tr><td>Art:</td><td>{{}}</td></tr>
-		''', html)
 	data[prefix + 'date'] = scrape('''
 		<tr><td>Datum:</td><td>{{}}</td></tr>
 		''', html)
@@ -290,8 +455,15 @@ def get_document_details(dtype, id):
 		<tr><td>Betreff:</td><td>{{}}</td></tr>
 		''', html)
 	if dtype == 'request':
-		data['committees'] = scrape('''
+		committee = scrape('''
 			<tr><td>Gremien:</td><td>{{}}</td></tr>
+			''', html)
+		committee_id = get_committee_id_by_name(committee)
+		if committee_id is not None:
+			data['committee_id'] = committee_id
+	else:
+		data[prefix + 'type'] = scrape('''
+			<tr><td>Art:</td><td>{{}}</td></tr>
 			''', html)
 
 	# Get PDFs
@@ -334,6 +506,7 @@ def get_attachments(url, forms_list):
 	br.open(url)
 	for form in forms_list:
 		attachment_id = int(form[3:])
+		content = None
 		if not is_attachment_in_db(int(form[3:])):
 			print "New attachment: " + form
 			br.select_form(name=form)
@@ -365,13 +538,19 @@ def get_text_from_pdfdata(data):
 	doc = PDFDocument()
 	#fp = open(inputbuffer, 'rb')
 	parser = PDFParser(fp)
-	parser.set_document(doc)
+	try:
+		parser.set_document(doc)
+	except:
+		# occurs for example if document is encrypted
+		return False
 	try:
 		doc.set_parser(parser)
 	except:
 		return False
-	doc.initialize('')
-	#interpreter = PDFPageInterpreter(rsrc, device)
+	try:
+		doc.initialize('')
+	except:
+		return False
 	interpreter = PDFPageInterpreter(rsrc, device)
 	for i, page in enumerate(doc.get_pages()):
 		try:
@@ -412,7 +591,7 @@ def get_session_attendants(id):
 		Get list of people who have attended a session
 	"""
 	global db
-	url = 'http://ratsinformation.stadt-koeln.de/to0045.asp?__ctext=0&__ksinr=' + str(id)
+	url = BASEURL + 'to0045.asp?__ctext=0&__ksinr=' + str(id)
 	html = urllib2.urlopen(url).read()
 	data = scrape("""
 	{*
@@ -444,7 +623,7 @@ def get_committee_details(id):
 		Get detail information on a committee (Sitzung)
 	"""
 	global db
-	url = 'http://ratsinformation.stadt-koeln.de/kp0040.asp?__kgrnr=' + str(id)
+	url = BASEURL + 'kp0040.asp?__kgrnr=' + str(id)
 	html = urllib2.urlopen(url).read()
 	data = {}
 
@@ -463,7 +642,7 @@ def is_session_in_db(id):
 
 def is_attachment_in_db(id):
 	"""
-		Returns true if the attachment with a given numeric ID is already in the database
+		Returns true if the attachment with a given numeric ID is in the database
 	"""
 	global db
 	result = db.get_rows('SELECT attachment_id FROM attachments WHERE attachment_id=%d' % id)
@@ -471,31 +650,58 @@ def is_attachment_in_db(id):
 		return True
 	return False
 
-
-if __name__ == '__main__':
-	db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
-	# get submission document details
+def scrape_incomplete_datasets():
+	global db
+	# get submission document details for entries created before
 	docs = db.get_rows('SELECT * FROM submissions WHERE submission_identifier IS NULL OR submission_identifier = "" ORDER BY RAND()')
 	for doc in docs:
-		get_document_details('submission', doc['submission_id'])
-
+		if not is_document_complete('submission', doc['submission_id']):
+			get_document_details('submission', doc['submission_id'])
 	# get request document details
 	requests = db.get_rows('SELECT * FROM requests WHERE request_identifier IS NULL OR request_identifier = "" ORDER BY RAND()')
 	for request in requests:
-		get_document_details('request', request['request_id'])
+		if not is_document_complete('request', request['request_id']):
+			get_document_details('request', request['request_id'])
 
-	sys.exit()
-
+def scrape_new_sessions():
 	years = [2011, 2012, 2008, 2009, 2010]
 	#years = shuffle([2008, 2009, 2010, 2011, 2012])
 	months = shuffle(range(1,13))
-
 	for year in years:
 		for month in months:
 			session_ids = get_session_ids(year, month)
 			for session_id in session_ids:
-				if not is_session_in_db(session_id):
+				#if not is_session_in_db(session_id):
 					print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
 					get_session_details(session_id)
 					get_session_attendants(session_id)
+
+def scrape_all_sessions():
+	years = [2011, 2010, 2009, 2008, 2012]
+	#years = shuffle([2008, 2009, 2010, 2011, 2012])
+	months = shuffle(range(1,13))
+	for year in years:
+		for month in months:
+			session_ids = get_session_ids(year, month)
+			for session_id in session_ids:
+				print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
+				get_session_details(session_id)
+				get_session_attendants(session_id)
+
+
+if __name__ == '__main__':
+	db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
+	
+	scrape_all_sessions()
+	
+	# Clean leftovers from last run
+	scrape_incomplete_datasets()
+	
+	# Get new datasets
+	scrape_new_sessions()
+	
+	# Clean up again
+	scrape_incomplete_datasets()
+
+
 
