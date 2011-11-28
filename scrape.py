@@ -479,10 +479,12 @@ def get_document_details(dtype, id):
 		docs = get_attachments(url, forms)
 		if len(docs) > 0:
 			attachment_ids = docs.keys()
-			attachment_id_strings = []
 			for aid in attachment_ids:
-				attachment_id_strings.append(str(aid))
-			data['attachment_ids'] = ' '.join(attachment_id_strings)
+				entry = {
+					'attachment_id': aid,
+					prefix + 'id': data[prefix + 'id']
+				}
+				db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
 
 
 	# post-process

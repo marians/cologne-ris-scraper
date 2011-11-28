@@ -71,6 +71,12 @@ CREATE TABLE `requests` (
   KEY `committee_id` (`committee_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+CREATE TABLE `requests2attachments` (
+  `request_id` int(11) unsigned NOT NULL,
+  `attachment_id` int(11) unsigned NOT NULL,
+  UNIQUE KEY `attachment_id` (`attachment_id`,`request_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
 CREATE TABLE `sessions` (
   `session_id` int(11) unsigned NOT NULL DEFAULT '0',
   `session_identifier` varchar(255) DEFAULT NULL,
@@ -92,4 +98,10 @@ CREATE TABLE `submissions` (
   `submission_subject` text,
   `attachment_ids` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`submission_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE `submissions2attachments` (
+  `submission_id` int(11) unsigned NOT NULL,
+  `attachment_id` int(11) unsigned NOT NULL,
+  UNIQUE KEY `attachment_id` (`attachment_id`,`submission_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
