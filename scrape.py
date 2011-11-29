@@ -552,11 +552,12 @@ def get_attachments(url, forms_list):
 						ret[attachment_id]['attachment_content'] = content
 					db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
 				# Datei im Cache speichern
+				folder = get_cache_path(form)
 				try:
-					os.makedirs(ATTACHMENTFOLDER)
+					os.makedirs(folder)
 				except:
 					pass
-				f = open(ATTACHMENTFOLDER + os.sep + form + '.' + form[0:3], 'w+')
+				f = open(folder + os.sep + form + '.' + form[0:3], 'w+')
 				f.write(data)
 				f.close()
 			else:
@@ -693,6 +694,12 @@ def is_attachment_in_db(id):
 	if len(result) > 0:
 		return True
 	return False
+
+def get_cache_path(formname):
+	firstfolder = formname[-1]
+	secondfolder = formname[-2:-1]
+	ret = ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep + str(secondfolder)
+	return ret
 
 def scrape_incomplete_datasets():
 	global db
