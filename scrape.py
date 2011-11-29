@@ -30,7 +30,7 @@ import urllib2
 from StringIO import StringIO
 from scrapemark import scrape
 import mechanize
-import MySQLdb
+from datastore import DataStore
 from pdfminer.pdfparser import PDFDocument, PDFParser
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter, process_pdf
 from pdfminer.pdfdevice import PDFDevice, TagExtractor
@@ -38,65 +38,6 @@ from pdfminer.converter import XMLConverter, HTMLConverter, TextConverter
 from pdfminer.cmapdb import CMapDB
 from pdfminer.layout import LAParams
 
-class DataStore:
-	def __init__(self, dbname, host='localhost', user='root', password=''):
-		try:
-			self.conn = MySQLdb.connect (host = host, user = user, passwd = password, db = dbname)
-			self.cursor = self.conn.cursor(MySQLdb.cursors.DictCursor)
-			self.cursor.execute("SET NAMES 'utf8'")
-			self.cursor.execute("SET CHARACTER SET 'utf8'")
-		except MySQLdb.Error, e:
-			print "Error %d: %s" % (e.args[0], e.args[1])
-			sys.exit (1)
-	def get_rows(self, sql):
-		try:
-			self.cursor.execute(sql)
-			rows = []
-			while (1):
-				row = self.cursor.fetchone()
-				if row == None:
-					break
-				rows.append(row)
-			return rows
-		except MySQLdb.Error, e:
-			print "Error %d: %s" % (e.args[0], e.args[1])
-	def save_rows(self, table, data, unique_keys):
-		if isinstance(data, list):
-			pass
-		else:
-			data = [ data ]
-		for thedict in data:
-			values = []
-			sql = 'INSERT IGNORE INTO ' + table +' ('+ ', '.join(thedict.keys()) +')'
-			sql2 = ' VALUES ('
-			placeholders = []
-			for el in thedict.keys():
-				placeholders.append("%s")
-				if thedict[el] is None:
-					values.append(thedict[el])
-				elif isinstance(thedict[el], int) or isinstance(thedict[el], long):
-					values.append(thedict[el])
-				else:
-					values.append(thedict[el].encode('utf-8'))
-			sql2 += ", ".join(placeholders) + ')'
-			sql += sql2
-			if unique_keys is not None and unique_keys != []:
-				sql3 = ' ON DUPLICATE KEY UPDATE '
-				updates = []
-				for el in thedict.keys():
-					if el not in unique_keys:
-						updates.append(el + "=%s")
-						if thedict[el] is None:
-							values.append(thedict[el])
-						elif isinstance(thedict[el], int) or isinstance(thedict[el], long):
-							values.append(thedict[el])
-						else:
-							values.append(thedict[el].encode('utf-8'))
-				if len(updates) > 0:
-					sql3 += ", ".join(updates)
-					sql += sql3
-			#print sql
-			self.cursor.execute(sql, values)
 
 def shuffle(l):
 	randomly_tagged_list = [(random.random(), x) for x in l]
@@ -715,9 +656,9 @@ def scrape_incomplete_datasets():
 			get_document_details('request', request['request_id'])
 
 def scrape_new_sessions():
-	years = [2011, 2012, 2008, 2009, 2010]
-	#years = shuffle([2008, 2009, 2010, 2011, 2012])
-	months = shuffle(range(1,13))
+	#years = [2011, 2012, 2008, 2009, 2010]
+	years = [2010]
+	months = range(1,13)
 	for year in years:
 		for month in months:
 			session_ids = get_session_ids(year, month)
@@ -743,13 +684,13 @@ def scrape_all_sessions():
 if __name__ == '__main__':
 	db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
 	
-	scrape_all_sessions()
+	#scrape_all_sessions()
+	scrape_new_sessions()
 	
 	# Clean leftovers from last run
 	#scrape_incomplete_datasets()
 	
 	# Get new datasets
-	#scrape_new_sessions()
 	
 	# Clean up again
 	#scrape_incomplete_datasets()

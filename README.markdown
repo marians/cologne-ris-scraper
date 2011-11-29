@@ -23,9 +23,7 @@ Ein Scraper ist ein Programm, dass die Daten aus einer Website extrahiert und in
 Der Scraper kann noch nicht als "fertig" bezeichnet werden.
 
 * Es werden noch nicht alle wesentlichen Daten erfasst.
-* Bei den Dokumenten-Attachments werden bisher nur die Volltexte von PDFs erfasst. Bei anderen Typen 
-  wie z.B. JPEG-Bildern oder Dokumenten-Scans im TIF-Format werden zwar die Metadaten erfasst, aber
-  die Dokumentendaten werden nicht gespeichert.
+* Anhänge mit Texten, z.B. TIF-Scans (Faxe) werden nur gespeichert, Volltexte werden jedoch nicht extrahiert.
 
 ###Welche Programmiersprache nutzt das Programm?
 

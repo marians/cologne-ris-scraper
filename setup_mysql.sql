@@ -1,13 +1,13 @@
 CREATE TABLE `agendaitems` (
-  `agendaitem_id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `agendaitem_id` int(11) unsigned NOT NULL,
   `session_id` int(10) unsigned DEFAULT NULL,
-  `agendaitem_identifier` varchar(32) DEFAULT NULL,
+  `agendaitem_identifier` varchar(255) DEFAULT NULL,
   `agendaitem_public` tinyint(1) unsigned DEFAULT NULL,
   `agendaitem_subject` mediumtext,
   `agendaitem_result` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`agendaitem_id`),
   KEY `session_id` (`session_id`)
-) ENGINE=MyISAM AUTO_INCREMENT=116345 DEFAULT CHARSET=utf8;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 CREATE TABLE `agendaitems2attachments` (
   `agendaitem_id` int(11) unsigned NOT NULL,
@@ -66,7 +66,6 @@ CREATE TABLE `requests` (
   `request_date` date DEFAULT NULL,
   `request_identifier` varchar(255) DEFAULT NULL,
   `request_subject` text,
-  `attachment_ids` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`request_id`),
   KEY `committee_id` (`committee_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
@@ -74,6 +73,7 @@ CREATE TABLE `requests` (
 CREATE TABLE `requests2attachments` (
   `request_id` int(11) unsigned NOT NULL,
   `attachment_id` int(11) unsigned NOT NULL,
+  `attachment_role` varchar(255) DEFAULT NULL,
   UNIQUE KEY `attachment_id` (`attachment_id`,`request_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
@@ -90,18 +90,25 @@ CREATE TABLE `sessions` (
   PRIMARY KEY (`session_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+CREATE TABLE `sessions2attachments` (
+  `session_id` int(11) unsigned NOT NULL,
+  `attachment_id` int(11) unsigned NOT NULL,
+  `attachment_role` varchar(255) DEFAULT NULL,
+  UNIQUE KEY `session_id` (`session_id`,`attachment_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
 CREATE TABLE `submissions` (
   `submission_id` int(11) unsigned NOT NULL DEFAULT '0',
   `submission_date` date DEFAULT NULL,
   `submission_identifier` varchar(255) DEFAULT NULL,
   `submission_type` varchar(255) DEFAULT NULL,
   `submission_subject` text,
-  `attachment_ids` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`submission_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 CREATE TABLE `submissions2attachments` (
   `submission_id` int(11) unsigned NOT NULL,
   `attachment_id` int(11) unsigned NOT NULL,
+  `attachment_role` varchar(255) DEFAULT NULL,
   UNIQUE KEY `attachment_id` (`attachment_id`,`submission_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
