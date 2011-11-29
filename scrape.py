@@ -17,6 +17,9 @@ DBNAME = 'cologne-ris'
 # Base URL
 BASEURL = 'http://ratsinformation.stadt-koeln.de/'
 
+# Attachment directory
+ATTACHMENTFOLDER = '../attachments'
+
 ### End of configuration
 
 import sys
@@ -135,32 +138,36 @@ def attachment_role_string(string):
 	"""
 		Returns the correct normalized attachment role category
 	"""
-	types = {
-		u'Abstimmung': 'ABSTIMMUNG',
-		u'Mitteilung/Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-		u'Mitteilung / Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-		u'Mitteilung BV': 'MITTEILUNG_BV',
-		u'Beantwortung einer m\xfcndl. Anfrage Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-		u'Mitteilung/Beantwortung BV': 'MITTEILUNG_BV',
-		u'Mitteilung/Beantwortung Rat': 'MITTEILUNG_RAT',
-		u'Mitteilung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-		u'Mitteilungsvorlage': 'MITTEILUNGSVORLAGE',
-		u'Beschlussvorlage': 'BESCHLUSSVORLAGE',
-		u'Beschlussvorlage Rat': 'BESCHLUSSVORLAGE_RAT',
-		u'Beschlussvorlage Ausschuss': 'BESCHLUSSVORLAGE_AUSSCHUSS',
-		u'Beschlussvorlage Bezirksvertretung': 'BESCHLUSSVORLAGE_BEZIRKSVERTRETUNG',
-		u'Antrag BV': 'ANTRAG_BV',
-		u'Anfrage BV': 'ANFRAGE_BV',
-		u'Dringlichkeitsvorlage Rat und Hauptausschuss': 'DRINGLICHKEITSVORLAGE_RAT_HAUPTAUSSCHUSS',
-	}
-	if string in types:
-		return types[string]
-	print "WARN: Unknown attachment type string", [string]
+	#types = {
+	#	u'Abstimmung': 'ABSTIMMUNG',
+	#	u'Mitteilung/Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+	#	u'Mitteilung / Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+	#	u'Mitteilung BV': 'MITTEILUNG_BV',
+	#	u'Beantwortung einer m\xfcndl. Anfrage Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+	#	u'Mitteilung/Beantwortung BV': 'MITTEILUNG_BV',
+	#	u'Mitteilung/Beantwortung Rat': 'MITTEILUNG_RAT',
+	#	u'Mitteilung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
+	#	u'Mitteilungsvorlage': 'MITTEILUNGSVORLAGE',
+	#	u'Beschlussvorlage': 'BESCHLUSSVORLAGE',
+	#	u'Beschlussvorlage Rat': 'BESCHLUSSVORLAGE_RAT',
+	#	u'Beschlussvorlage Ausschuss': 'BESCHLUSSVORLAGE_AUSSCHUSS',
+	#	u'Beschlussvorlage Bezirksvertretung': 'BESCHLUSSVORLAGE_BEZIRKSVERTRETUNG',
+	#	u'Antrag BV': 'ANTRAG_BV',
+	#	u'Anfrage BV': 'ANFRAGE_BV',
+	#	u'Dringlichkeitsvorlage Rat und Hauptausschuss': 'DRINGLICHKEITSVORLAGE_RAT_HAUPTAUSSCHUSS',
+	#}
+	#if string in types:
+	#	return types[string]
+	#print "WARN: Unknown attachment type string", [string]
+	string = re.sub(r'\s+\[[^\]]+\]', '', string)
 	return string
 
-def get_committee_id_by_name(name):
+def cleanup_identifier_string(string):
+	return string.replace(' ', '')
+
+def get_committee_id_by_name(cname):
 	global db
-	result = db.get_rows('SELECT committee_id FROM committees WHERE committee_title=%s' % name)
+	result = db.get_rows('SELECT committee_id FROM committees WHERE committee_title="%s"' % cname)
 	if len(result) == 1:
 		return result[0]['committee_id']
 
@@ -200,9 +207,9 @@ def get_session_details(id):
 		<a href="kp0040.asp?__kgrnr={{}}"
 		''', html)
 
-	data['session_identifier'] = scrape('''
+	data['session_identifier'] = cleanup_identifier_string(scrape('''
 		<tr><td>Sitzung:</td><td>{{}}</td></tr>
-		''', html)
+		''', html))
 
 	data['session_location'] = scrape('''
 		<tr><td>Raum:</td><td>{{}}</td></tr>
@@ -225,14 +232,14 @@ def get_session_details(id):
 	data['session_time_end'] = endtime
 
 	db.save_rows('sessions', data, ['session_id'])
-	# TODO: Prüfe, ob das Gremium schon vollständig in der Datenbank ist und scrape nur bei Bedarf
-	#if data['committee_id'] is not None and data['committee_id'] is not '':
-	#	get_committee_details(data['committee_id'])
-	get_agenda(id, html)
+	if data['committee_id'] is not None and data['committee_id'] is not '' and not is_committee_in_db(data['committee_id']):
+		get_committee_details(data['committee_id'])
+	get_agenda_and_attachments(id, html)
 
-def get_agenda(session_id, html):
+def get_agenda_and_attachments(session_id, html):
 	"""
-		Reads agenda items from session detail page HTML.
+		Reads agenda items from session detail page HTML and
+		stores related attachments.
 
 		We parse the HTML several times to get all details.
 		- first, all agenda table rows are parsed to "all"
@@ -334,9 +341,13 @@ def get_agenda(session_id, html):
 				if 'submissions' in entry:
 					for doc in entry['submissions']:
 						submission_links.append({'agendaitem_id': entry['id'], 'submission_id': doc['kvonr']})
+						if not is_document_complete('submission', doc['kvonr']):
+							get_document_details('submission', doc['kvonr'])
 				if 'requests' in entry:
 					for doc in entry['requests']:
 						request_links.append({'agendaitem_id': entry['id'], 'request_id': doc['kagnr']})
+						if not is_document_complete('request', doc['kagnr']):
+							get_document_details('request', doc['kagnr'])
 	# Alle Verknüfungen in die Datenbank schreiben
 	db.save_rows('agendaitems2submissions', submission_links, ['agendaitem_id', 'submission_id'])
 	db.save_rows('agendaitems2requests', request_links, ['agendaitem_id', 'request_id'])
@@ -383,21 +394,35 @@ def get_agenda(session_id, html):
 		for attachment in attachements_by_id[id]:
 			#print id, attachment
 			if 'formname' in attachment and 'linktitle' in attachment:
-				role = attachment_role_string( re.sub(r'\s+\[[^\]]+\]', '', attachment['linktitle'])
-				if role != 'Abstimmung':
-					dataset = {
-						'agendaitem_id': id,
-						'attachment_id': int(attachment['formname'][3:]),
-						'attachment_role': attachment['linktitle'])
-					}
-					db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
-					if not is_attachment_in_db(int(attachment['formname'][3:])):
-						new_attachment_formnames.append(attachment['formname'])
+				role = attachment_role_string(attachment['linktitle'])
+				dataset = {
+					'agendaitem_id': id,
+					'attachment_id': int(attachment['formname'][3:]),
+					'attachment_role': attachment_role_string(attachment['linktitle'])
+				}
+				db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
+				new_attachment_formnames.append(attachment['formname'])
+
+	# 5. Attachments außerhalb der Tagesordnung erfassen (Einladung, Niederschrift)
+	furtherattachments = scrape('''
+	{*
+		<a href="javascript:document.{{ [att].formname }}.submit();">{{ [att].linktitle }}</a>
+	*}
+	''', html)
+	if furtherattachments is not None and 'att' in furtherattachments:
+		for attachment in furtherattachments['att']:
+			if attachment['formname'] not in new_attachment_formnames:
+				role = attachment_role_string(attachment['linktitle'])
+				dataset = {
+					'session_id': session_id,
+					'attachment_id': int(attachment['formname'][3:]),
+					'attachment_role': role
+				}
+				db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
+				new_attachment_formnames.append(attachment['formname'])
+
 	if len(new_attachment_formnames) > 0:
 		get_attachments(get_session_detail_url(session_id), new_attachment_formnames)
-	# TODO: Attachments außerhalb der Tagesordnung erfassen (Einladung, Niederschrift)
-
-	
 
 
 def is_document_complete(dtype, id):
@@ -410,7 +435,7 @@ def is_document_complete(dtype, id):
 	if dtype == 'request':
 		sql = '''SELECT request_id FROM requests 
 			WHERE request_id=%s 
-			AND committees IS NOT NULL
+			AND committee_id IS NOT NULL
 			AND request_date IS NOT NULL
 			AND request_identifier IS NOT NULL
 			AND request_subject IS NOT NULL'''
@@ -429,7 +454,7 @@ def is_document_complete(dtype, id):
 
 def get_document_details(dtype, id):
 	"""
-		Get details on a request (Antrag) or submission (Vorlage)
+		Lade Detailseite eines Antrags (request) oder einer Vorlage (submission)
 	"""
 	global db
 	data = {}
@@ -437,17 +462,19 @@ def get_document_details(dtype, id):
 	if dtype == 'request':
 		url = BASEURL + 'ag0050.asp?__kagnr=' + str(id)
 		prefix = 'request_'
+		print "Lade Antrag", id, url
 	elif dtype == 'submission':
 		url = BASEURL + 'vo0050.asp?__kvonr=' + str(id)
 		prefix = 'submission_'
+		print "Lade Vorlage", id, url
 	data[prefix + 'id'] = id
 	html = urllib2.urlopen(url).read()
 
 	html = html.replace('<br>', ' ')	
 
-	data[prefix + 'identifier'] = scrape('''
+	data[prefix + 'identifier'] = cleanup_identifier_string(scrape('''
 		<tr><td>Name:</td><td>{{}}</td></tr>
-		''', html)
+		''', html))
 	data[prefix + 'date'] = scrape('''
 		<tr><td>Datum:</td><td>{{}}</td></tr>
 		''', html)
@@ -466,36 +493,31 @@ def get_document_details(dtype, id):
 			<tr><td>Art:</td><td>{{}}</td></tr>
 			''', html)
 
-	# Get PDFs
+	# Lade Anhänge
 	attachments = scrape('''
 		{*
-		<form  action="ydocstart.asp" method="post"  target="_blank" name="{{ [form].name }}">
+			<a href="javascript:document.{{ [form].formname }}.submit();">{{ [form].linktitle }}</a>
 		*}
 		''', html)
 	if 'form' in attachments:
 		forms = []
 		for form in attachments['form']:
-			forms.append(form['name'])
+			forms.append(form['formname'])
+			entry = {
+				'attachment_id': int(form['formname'][3:]),
+				prefix + 'id': data[prefix + 'id'],
+				'attachment_role': attachment_role_string(form['linktitle'])
+			}
+			db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
 		docs = get_attachments(url, forms)
-		if len(docs) > 0:
-			attachment_ids = docs.keys()
-			for aid in attachment_ids:
-				entry = {
-					'attachment_id': aid,
-					prefix + 'id': data[prefix + 'id']
-				}
-				db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
-
 
 	# post-process
 	if data[prefix + 'date'] is not None and data[prefix + 'date'] != '':
 		data[prefix + 'date'] = get_date(data[prefix + 'date'])
 
 	if dtype == 'request':
-		print "New request", data[prefix + 'id']
 		db.save_rows('requests', data, ['request_id'])
 	elif dtype == 'submission':
-		print "New submission", data[prefix + 'id']
 		db.save_rows('submissions', data, ['submission_id'])
 
 def get_attachments(url, forms_list):
@@ -510,24 +532,35 @@ def get_attachments(url, forms_list):
 		attachment_id = int(form[3:])
 		content = None
 		if not is_attachment_in_db(int(form[3:])):
-			print "New attachment: " + form
+			print "Lade Anhang " + form
 			br.select_form(name=form)
 			response = br.submit()
 			data = response.read()
 			headers = response.info()
-			ret[attachment_id] = {
-				'attachment_id': attachment_id,
-				'attachment_mimetype': headers['content-type'].lower().decode('utf-8'),
-				'attachment_size': len(data),
-			}
-			if 'Content-Disposition' in headers:
-				ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
-			if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
-				content = get_text_from_pdfdata(data)
-			if content is None or (content is not None and content is not False):
-				if content is not None and content is not False:
-					ret[attachment_id]['attachment_content'] = content
-				db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
+			if response.code == 200:
+				ret[attachment_id] = {
+					'attachment_id': attachment_id,
+					'attachment_mimetype': headers['content-type'].lower().decode('utf-8'),
+					'attachment_size': len(data),
+				}
+				if 'Content-Disposition' in headers:
+					ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
+				if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
+					content = get_text_from_pdfdata(data)
+				if content is None or (content is not None and content is not False):
+					if content is not None and content is not False:
+						ret[attachment_id]['attachment_content'] = content
+					db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
+				# Datei im Cache speichern
+				try:
+					os.makedirs(ATTACHMENTFOLDER)
+				except:
+					pass
+				f = open(ATTACHMENTFOLDER + os.sep + form + '.' + form[0:3], 'w+')
+				f.write(data)
+				f.close()
+			else:
+				print "ERROR: Fehlerhafter HTTP Antwortcode", response.code
 			br.back()
 	return ret
 
@@ -594,6 +627,7 @@ def get_session_attendants(id):
 	"""
 	global db
 	url = BASEURL + 'to0045.asp?__ctext=0&__ksinr=' + str(id)
+	print "Lade Anwesenheitsliste", url
 	html = urllib2.urlopen(url).read()
 	data = scrape("""
 	{*
@@ -620,12 +654,20 @@ def get_session_attendants(id):
 	db.save_rows('people', persons, ['person_id'])
 	db.save_rows('attendance', attendants, ['session_id', 'person_id'])
 
+def is_committee_in_db(committee_id):
+	global db
+	result = db.get_rows('SELECT committee_id FROM committees WHERE committee_id=%d' % int(committee_id))
+	if len(result) > 0:
+		return True
+	return False
+
 def get_committee_details(id):
 	"""
 		Get detail information on a committee (Sitzung)
 	"""
 	global db
 	url = BASEURL + 'kp0040.asp?__kgrnr=' + str(id)
+	print "Lade Gremium", url
 	html = urllib2.urlopen(url).read()
 	data = {}
 
@@ -679,9 +721,9 @@ def scrape_new_sessions():
 					get_session_attendants(session_id)
 
 def scrape_all_sessions():
-	years = [2011, 2010, 2009, 2008, 2012]
-	#years = shuffle([2008, 2009, 2010, 2011, 2012])
-	months = shuffle(range(1,13))
+	#years = [2011, 2010, 2009, 2008, 2012]
+	years = [2010]
+	months = range(1,13)
 	for year in years:
 		for month in months:
 			session_ids = get_session_ids(year, month)
@@ -697,13 +739,13 @@ if __name__ == '__main__':
 	scrape_all_sessions()
 	
 	# Clean leftovers from last run
-	scrape_incomplete_datasets()
+	#scrape_incomplete_datasets()
 	
 	# Get new datasets
-	scrape_new_sessions()
+	#scrape_new_sessions()
 	
 	# Clean up again
-	scrape_incomplete_datasets()
+	#scrape_incomplete_datasets()
 
 
 
