@@ -71,6 +71,9 @@ class DataStore:
 	def get_submissions(self):
 		return self.get_rows('SELECT * FROM submissions ORDER BY submission_date')
 	
+	def get_requests(self):
+		return self.get_rows('SELECT * FROM requests ORDER BY request_date')
+
 	def get_agendaitems_by_submission_id(self, submission_id):
 		return self.get_rows('''SELECT * FROM agendaitems2submissions 
 			LEFT JOIN agendaitems ON agendaitems2submissions.agendaitem_id=agendaitems.agendaitem_id
@@ -79,6 +82,14 @@ class DataStore:
 			WHERE submission_id=%d
 			ORDER BY session_date, session_time_start''' % submission_id)
 	
+	def get_agendaitems_by_request_id(self, request_id):
+		return self.get_rows('''SELECT * FROM agendaitems2requests 
+			LEFT JOIN agendaitems ON agendaitems2requests.agendaitem_id=agendaitems.agendaitem_id
+			LEFT JOIN sessions ON sessions.session_id=agendaitems.session_id
+			LEFT JOIN committees ON committees.committee_id=sessions.committee_id
+			WHERE request_id=%d
+			ORDER BY session_date, session_time_start''' % request_id)
+
 	def get_attachments_by_submission_id(self, submission_id):
 		return self.get_rows('''SELECT * FROM submissions2attachments 
 			LEFT JOIN attachments ON submissions2attachments.attachment_id=attachments.attachment_id
@@ -88,3 +99,31 @@ class DataStore:
 			LEFT JOIN committees ON committees.committee_id=sessions.committee_id
 			WHERE submission_id=%d
 			ORDER BY session_date, session_time_start''' % submission_id)
+			
+	def get_attachments_by_request_id(self, request_id):
+		return self.get_rows('''SELECT * FROM requests2attachments 
+			LEFT JOIN attachments ON requests2attachments.attachment_id=attachments.attachment_id
+			LEFT JOIN agendaitems2attachments ON agendaitems2attachments.attachment_id=attachments.attachment_id
+			LEFT JOIN agendaitems ON agendaitems.agendaitem_id=agendaitems2attachments.agendaitem_id
+			LEFT JOIN sessions ON sessions.session_id=agendaitems.session_id
+			LEFT JOIN committees ON committees.committee_id=sessions.committee_id
+			WHERE request_id=%d
+			ORDER BY session_date, session_time_start''' % request_id)
+
+	def get_attending_people_by_submission_id(self, submission_id):
+		return self.get_rows('''SELECT DISTINCT agendaitems2submissions.submission_id, people.person_id, person_name, person_organization 
+			FROM agendaitems2submissions 
+			LEFT JOIN agendaitems ON agendaitems2submissions.agendaitem_id=agendaitems.agendaitem_id
+			LEFT JOIN sessions ON sessions.session_id=agendaitems.session_id
+			LEFT JOIN attendance ON agendaitems.session_id=attendance.session_id
+			LEFT JOIN people ON attendance.person_id=people.person_id
+			WHERE submission_id=%d''' % submission_id)
+
+	def get_attending_people_by_request_id(self, request_id):
+		return self.get_rows('''SELECT DISTINCT agendaitems2requests.request_id, people.person_id, person_name, person_organization 
+			FROM agendaitems2requests 
+			LEFT JOIN agendaitems ON agendaitems2requests.agendaitem_id=agendaitems.agendaitem_id
+			LEFT JOIN sessions ON sessions.session_id=agendaitems.session_id
+			LEFT JOIN attendance ON agendaitems.session_id=attendance.session_id
+			LEFT JOIN people ON attendance.person_id=people.person_id
+			WHERE request_id=%d''' % request_id)
