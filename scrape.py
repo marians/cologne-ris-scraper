@@ -18,7 +18,7 @@ DBNAME = 'cologne-ris'
 BASEURL = 'http://ratsinformation.stadt-koeln.de/'
 
 # Attachment directory
-ATTACHMENTFOLDER = '../attachments'
+ATTACHMENTFOLDER = '/Volumes/BigSpace/Entwicklung/2011/ris-scraper-cologne/attachments'
 
 ### End of configuration
 
@@ -104,7 +104,15 @@ def attachment_role_string(string):
 	return string
 
 def cleanup_identifier_string(string):
+	if string is None:
+		return string
 	return string.replace(' ', '')
+
+def parse_formname(formname):
+	matches = re.match(r'^([a-z]+)([0-9]+)$', formname)
+	if matches is not None:
+		return (matches.group(1), int(matches.group(2)))
+	return None
 
 def get_committee_id_by_name(cname):
 	global db
@@ -136,6 +144,7 @@ def get_session_details(id):
 	"""
 	global db
 	url = get_session_detail_url(id)
+	print "Lade Sitzung", id, url
 	html = urllib2.urlopen(url).read()
 	data = {}
 
@@ -172,10 +181,13 @@ def get_session_details(id):
 	data['session_time_start'] = starttime
 	data['session_time_end'] = endtime
 
-	db.save_rows('sessions', data, ['session_id'])
 	if data['committee_id'] is not None and data['committee_id'] is not '' and not is_committee_in_db(data['committee_id']):
 		get_committee_details(data['committee_id'])
 	get_agenda_and_attachments(id, html)
+	
+	get_session_attendants(id)
+	
+	db.save_rows('sessions', data, ['session_id'])
 
 def get_agenda_and_attachments(session_id, html):
 	"""
@@ -282,13 +294,13 @@ def get_agenda_and_attachments(session_id, html):
 				if 'submissions' in entry:
 					for doc in entry['submissions']:
 						submission_links.append({'agendaitem_id': entry['id'], 'submission_id': doc['kvonr']})
-						if not is_document_complete('submission', doc['kvonr']):
-							get_document_details('submission', doc['kvonr'])
+						#if not is_document_complete('submission', doc['kvonr']):
+						get_document_details('submission', doc['kvonr'])
 				if 'requests' in entry:
 					for doc in entry['requests']:
 						request_links.append({'agendaitem_id': entry['id'], 'request_id': doc['kagnr']})
-						if not is_document_complete('request', doc['kagnr']):
-							get_document_details('request', doc['kagnr'])
+						#if not is_document_complete('request', doc['kagnr']):
+						get_document_details('request', doc['kagnr'])
 	# Alle Verknüfungen in die Datenbank schreiben
 	db.save_rows('agendaitems2submissions', submission_links, ['agendaitem_id', 'submission_id'])
 	db.save_rows('agendaitems2requests', request_links, ['agendaitem_id', 'request_id'])
@@ -336,9 +348,10 @@ def get_agenda_and_attachments(session_id, html):
 			#print id, attachment
 			if 'formname' in attachment and 'linktitle' in attachment:
 				role = attachment_role_string(attachment['linktitle'])
+				(doctype, docid) = parse_formname(attachment['formname'])
 				dataset = {
 					'agendaitem_id': id,
-					'attachment_id': int(attachment['formname'][3:]),
+					'attachment_id': docid,
 					'attachment_role': attachment_role_string(attachment['linktitle'])
 				}
 				db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
@@ -354,9 +367,10 @@ def get_agenda_and_attachments(session_id, html):
 		for attachment in furtherattachments['att']:
 			if attachment['formname'] not in new_attachment_formnames:
 				role = attachment_role_string(attachment['linktitle'])
+				(doctype, docid) = parse_formname(attachment['formname'])
 				dataset = {
 					'session_id': session_id,
-					'attachment_id': int(attachment['formname'][3:]),
+					'attachment_id': docid,
 					'attachment_role': role
 				}
 				db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
@@ -434,18 +448,21 @@ def get_document_details(dtype, id):
 			<tr><td>Art:</td><td>{{}}</td></tr>
 			''', html)
 
-	# Lade Anhänge
+	# Lade Anhänge oberhalb der Beratungen
 	attachments = scrape('''
+		<table class="smcdocbox">
 		{*
 			<a href="javascript:document.{{ [form].formname }}.submit();">{{ [form].linktitle }}</a>
 		*}
+		</table>
 		''', html)
-	if 'form' in attachments:
+	if attachments is not None and 'form' in attachments:
 		forms = []
 		for form in attachments['form']:
 			forms.append(form['formname'])
+			(doctype, docid) = parse_formname(form['formname'])
 			entry = {
-				'attachment_id': int(form['formname'][3:]),
+				'attachment_id': docid,
 				prefix + 'id': data[prefix + 'id'],
 				'attachment_role': attachment_role_string(form['linktitle'])
 			}
@@ -470,9 +487,9 @@ def get_attachments(url, forms_list):
 	br = mechanize.Browser()
 	br.open(url)
 	for form in forms_list:
-		attachment_id = int(form[3:])
+		(doctype, attachment_id) = parse_formname(form)
 		content = None
-		if not is_attachment_in_db(int(form[3:])):
+		if not is_attachment_in_db(attachment_id):
 			print "Lade Anhang " + form
 			br.select_form(name=form)
 			response = br.submit()
@@ -498,7 +515,8 @@ def get_attachments(url, forms_list):
 					os.makedirs(folder)
 				except:
 					pass
-				f = open(folder + os.sep + form + '.' + form[0:3], 'w+')
+				(doctype, docid) = parse_formname(form)
+				f = open(folder + os.sep + form + '.' + doctype, 'w+')
 				f.write(data)
 				f.close()
 			else:
@@ -529,12 +547,16 @@ def get_text_from_pdfdata(data):
 	except:
 		return False
 	interpreter = PDFPageInterpreter(rsrc, device)
-	for i, page in enumerate(doc.get_pages()):
-		try:
-			interpreter.process_page(page)
-		except:
-			print "Cancelling PDF extraction due to Error"
-			return False
+	try:
+		for i, page in enumerate(doc.get_pages()):
+			try:
+				interpreter.process_page(page)
+			except:
+				print "Cancelling PDF extraction due to Error"
+				return False
+	except:
+		print "Cancelling PDF extraction due to Error"
+		return False
 	device.close()
 	fp.close()
 	return outfp.getvalue().decode("latin-1")
@@ -655,37 +677,23 @@ def scrape_incomplete_datasets():
 		if not is_document_complete('request', request['request_id']):
 			get_document_details('request', request['request_id'])
 
-def scrape_new_sessions():
-	#years = [2011, 2012, 2008, 2009, 2010]
-	years = [2010]
-	months = range(1,13)
-	for year in years:
-		for month in months:
-			session_ids = get_session_ids(year, month)
-			for session_id in session_ids:
-				#if not is_session_in_db(session_id):
-					print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
-					get_session_details(session_id)
-					get_session_attendants(session_id)
-
-def scrape_all_sessions():
+def scrape_sessions():
 	#years = [2011, 2010, 2009, 2008, 2012]
-	years = [2010]
-	months = range(1,13)
+	years = [2011]
+	months = range(11,13)
 	for year in years:
 		for month in months:
 			session_ids = get_session_ids(year, month)
 			for session_id in session_ids:
 				print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
 				get_session_details(session_id)
-				get_session_attendants(session_id)
 
 
 if __name__ == '__main__':
 	db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
 	
-	#scrape_all_sessions()
-	scrape_new_sessions()
+	scrape_sessions()
+	#scrape_new_sessions()
 	
 	# Clean leftovers from last run
 	#scrape_incomplete_datasets()
