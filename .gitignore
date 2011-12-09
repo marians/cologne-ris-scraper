@@ -2,3 +2,11 @@
 .DS_Store
 
 datastore.pyc
+
+generate_hyphenation_synonyms.py
+
+geocoding_test.py
+
+synonyms_hyphenation.txt
+
+datastore.pyc
