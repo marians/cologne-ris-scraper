@@ -1,12 +1,5 @@
-
 .DS_Store
-
-datastore.pyc
-
+*.pyc
 generate_hyphenation_synonyms.py
-
 geocoding_test.py
-
 synonyms_hyphenation.txt
-
-datastore.pyc
