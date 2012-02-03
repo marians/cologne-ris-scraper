@@ -1,2 +1,12 @@
 .DS_Store
 *.pyc
+<<<<<<< HEAD
+=======
+generate_hyphenation_synonyms.py
+geocoding_test.py
+<<<<<<< HEAD
+synonyms_hyphenation.txt
+=======
+synonyms_hyphenation.txt
+>>>>>>> ignoriere *.pyc
+>>>>>>> ignoriere *.pyc
