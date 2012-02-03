@@ -18,7 +18,7 @@ DBNAME = 'cologne-ris'
 BASEURL = 'http://ratsinformation.stadt-koeln.de/'
 
 # Attachment directory
-ATTACHMENTFOLDER = '/Volumes/BigSpace/Entwicklung/2011/ris-scraper-cologne/attachments'
+ATTACHMENTFOLDER = '/Volumes/Projekte/2012/ris-scraper-cologne/attachments'
 
 ### End of configuration
 
@@ -31,12 +31,7 @@ from StringIO import StringIO
 from scrapemark import scrape
 import mechanize
 from datastore import DataStore
-from pdfminer.pdfparser import PDFDocument, PDFParser
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter, process_pdf
-from pdfminer.pdfdevice import PDFDevice, TagExtractor
-from pdfminer.converter import XMLConverter, HTMLConverter, TextConverter
-from pdfminer.cmapdb import CMapDB
-from pdfminer.layout import LAParams
+import subprocess
 
 
 def shuffle(l):
@@ -65,8 +60,8 @@ def result_string(string):
 		u'verwiesen in nachfolgende Gremien': 'UEBERWIESEN_GREMIEN',
 		u'ohne Votum verwiesen mit erneuter Wiedervorlage': 'UEBERWIESEN_WIEDERVORLAGE_OHNEVOTUM',
 		u'abgelehnt (in der Vorberatung)': 'ABGELEHNT_VORBERATUNG',
-		u'endg\xfcltig abgelehnt': 'ABGELEHNT_ENTGUELTIG',
-		u'endg\xfcltig zur\xfcckgezogen': 'ZURUECKGEZOGEN_ENTGUELTIG',
+		u'endg\xfcltig abgelehnt': 'ABGELEHNT_ENDGUELTIG',
+		u'endg\xfcltig zur\xfcckgezogen': 'ZURUECKGEZOGEN_ENDGUELTIG',
 		u'\xdcbergang zum n\xe4chsten Tagesordnungspunkt': 'NAECHSTER_TAGESORDNUNGSPUNKT',
 		u'mit \xc4nderungen empfohlen': 'EMPFOHLEN_GAENDERT',
 	}
@@ -496,6 +491,18 @@ def get_attachments(url, forms_list):
 			data = response.read()
 			headers = response.info()
 			if response.code == 200:
+				# Datei im Cache speichern
+				folder = get_cache_path(form)
+				try:
+					os.makedirs(folder)
+				except:
+					pass
+				(doctype, docid) = parse_formname(form)
+				full_filepath = folder + os.sep + form + '.' + doctype
+				f = open(full_filepath, 'w+')
+				f.write(data)
+				f.close()
+				
 				ret[attachment_id] = {
 					'attachment_id': attachment_id,
 					'attachment_mimetype': headers['content-type'].lower().decode('utf-8'),
@@ -504,26 +511,18 @@ def get_attachments(url, forms_list):
 				if 'Content-Disposition' in headers:
 					ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
 				if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
-					content = get_text_from_pdfdata(data)
+					content = get_text_from_pdf(full_filepath)
 				if content is None or (content is not None and content is not False):
 					if content is not None and content is not False:
 						ret[attachment_id]['attachment_content'] = content
 					db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
-				# Datei im Cache speichern
-				folder = get_cache_path(form)
-				try:
-					os.makedirs(folder)
-				except:
-					pass
-				(doctype, docid) = parse_formname(form)
-				f = open(folder + os.sep + form + '.' + doctype, 'w+')
-				f.write(data)
-				f.close()
+
 			else:
 				print "ERROR: Fehlerhafter HTTP Antwortcode", response.code
 			br.back()
 	return ret
 
+"""
 def get_text_from_pdfdata(data):
 	fp = StringIO(data)
 	outfp = StringIO()
@@ -560,6 +559,7 @@ def get_text_from_pdfdata(data):
 	device.close()
 	fp.close()
 	return outfp.getvalue().decode("latin-1")
+"""
 
 def get_date(string):
 	"""
@@ -664,6 +664,15 @@ def get_cache_path(formname):
 	ret = ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep + str(secondfolder)
 	return ret
 
+def get_text_from_pdf(path):
+	try:
+		text = subprocess.check_output([PDFTOTEXT, path, '-'], stderr=subprocess.STDOUT)
+		text = text.strip()
+		if text != '':
+			return text
+	except:
+		print "Fehler bei", path
+
 def scrape_incomplete_datasets():
 	global db
 	# get submission document details for entries created before
@@ -679,8 +688,8 @@ def scrape_incomplete_datasets():
 
 def scrape_sessions():
 	#years = [2011, 2010, 2009, 2008, 2012]
-	years = [2011]
-	months = range(11,13)
+	years = [2012]
+	months = range(1,3)
 	for year in years:
 		for month in months:
 			session_ids = get_session_ids(year, month)
