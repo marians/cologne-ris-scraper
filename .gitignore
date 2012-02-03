@@ -1,5 +1,2 @@
 .DS_Store
 *.pyc
-generate_hyphenation_synonyms.py
-geocoding_test.py
-synonyms_hyphenation.txt
