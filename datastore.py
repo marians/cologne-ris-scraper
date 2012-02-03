@@ -18,6 +18,8 @@ class DataStore:
 		except MySQLdb.Error, e:
 			print "Error %d: %s" % (e.args[0], e.args[1])
 			sys.exit (1)
+	def execute(self, sql, values):
+		self.cursor.execute(sql, values)
 	def get_rows(self, sql):
 		try:
 			self.cursor.execute(sql)
