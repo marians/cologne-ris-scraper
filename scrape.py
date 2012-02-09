@@ -484,7 +484,7 @@ def get_document_details(dtype, id):
             entry = {
                 'attachment_id': docid,
                 prefix + 'id': data[prefix + 'id'],
-                'attachment_role': attachment_role_string(form['linktitle'])
+                'attachment_role': form['linktitle']
             }
             db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
         docs = get_attachments(url, forms)
