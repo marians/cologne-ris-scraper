@@ -110,34 +110,6 @@ def result_string(string):
     print >> sys.stderr, "ERROR: Unknown result type string", [string]
     sys.exit()
 
-def attachment_role_string(string):
-    """
-        Returns the correct normalized attachment role category
-    """
-    #types = {
-    #    u'Abstimmung': 'ABSTIMMUNG',
-    #    u'Mitteilung/Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-    #    u'Mitteilung / Beantwortung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-    #    u'Mitteilung BV': 'MITTEILUNG_BV',
-    #    u'Beantwortung einer m\xfcndl. Anfrage Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-    #    u'Mitteilung/Beantwortung BV': 'MITTEILUNG_BV',
-    #    u'Mitteilung/Beantwortung Rat': 'MITTEILUNG_RAT',
-    #    u'Mitteilung Ausschuss': 'MITTEILUNG_AUSSCHUSS',
-    #    u'Mitteilungsvorlage': 'MITTEILUNGSVORLAGE',
-    #    u'Beschlussvorlage': 'BESCHLUSSVORLAGE',
-    #    u'Beschlussvorlage Rat': 'BESCHLUSSVORLAGE_RAT',
-    #    u'Beschlussvorlage Ausschuss': 'BESCHLUSSVORLAGE_AUSSCHUSS',
-    #    u'Beschlussvorlage Bezirksvertretung': 'BESCHLUSSVORLAGE_BEZIRKSVERTRETUNG',
-    #    u'Antrag BV': 'ANTRAG_BV',
-    #    u'Anfrage BV': 'ANFRAGE_BV',
-    #    u'Dringlichkeitsvorlage Rat und Hauptausschuss': 'DRINGLICHKEITSVORLAGE_RAT_HAUPTAUSSCHUSS',
-    #}
-    #if string in types:
-    #    return types[string]
-    #print >> sys.stderr, "WARN: Unknown attachment type string", [string]
-    string = re.sub(r'\s+\[[^\]]+\]', '', string)
-    return string
-
 def cleanup_identifier_string(string):
     """Bereinigt eine Dokumenten-ID und gibt sie zurück."""
     if string is None:
@@ -396,12 +368,11 @@ def get_agenda_and_attachments(session_id, html):
         for attachment in attachements_by_id[id]:
             #print id, attachment
             if 'formname' in attachment and 'linktitle' in attachment:
-                role = attachment_role_string(attachment['linktitle'])
                 (doctype, docid) = parse_formname(attachment['formname'])
                 dataset = {
                     'agendaitem_id': id,
                     'attachment_id': docid,
-                    'attachment_role': attachment_role_string(attachment['linktitle'])
+                    'attachment_role': attachment['linktitle']
                 }
                 db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
                 new_attachment_formnames.append(attachment['formname'])
@@ -415,12 +386,11 @@ def get_agenda_and_attachments(session_id, html):
     if furtherattachments is not None and 'att' in furtherattachments:
         for attachment in furtherattachments['att']:
             if attachment['formname'] not in new_attachment_formnames:
-                role = attachment_role_string(attachment['linktitle'])
                 (doctype, docid) = parse_formname(attachment['formname'])
                 dataset = {
                     'session_id': session_id,
                     'attachment_id': docid,
-                    'attachment_role': role
+                    'attachment_role': attachment['linktitle']
                 }
                 db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
                 new_attachment_formnames.append(attachment['formname'])
