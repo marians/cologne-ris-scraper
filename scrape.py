@@ -50,7 +50,13 @@ URI_COMMITTEE = 'kp0040.asp?__kgrnr=%d'
 # Verzeichnis für die Ablage von herunter geladenen Dateien
 ATTACHMENTFOLDER = '/Volumes/Projekte-1/2012/ris-scraper-cologne/attachments'
 
-PDFTOTEXT = '/opt/local/bin/pdftotext'
+# Verzeichnis für temporäre Dateien
+TMP_FOLDER = '/Volumes/Projekte-1/2012/ris-scraper-cologne/tmp'
+
+PDFTOTEXT_CMD = '/opt/local/bin/pdftotext'
+
+# Aufruf von file (fileutils) mit MimeType-Ausgabe
+FILE_CMD = '/usr/bin/file -b --mime-type'
 
 ### Ende der Konfiguration
 
@@ -66,6 +72,15 @@ from datastore import DataStore
 import subprocess
 from optparse import OptionParser
 import datetime
+import hashlib
+
+# Hier drin werden Statistiken gesammelt
+STATS = {
+    'bytes_loaded': 0,
+    'attachments_loaded': 0,
+    'attachments_new': 0,
+    'attachments_replaced': 0
+}
 
 def shuffle(l):
     randomly_tagged_list = [(random.random(), x) for x in l]
@@ -187,15 +202,15 @@ def get_session_details(id):
         <tr><td>Bezeichnung:</td><td>{{}}</td></tr>
         ''', html)
 
-    datetime = scrape('''
+    date_time = scrape('''
         <tr><td>Datum und Uhrzeit:</td><td>{{ datum }}, {{zeit}}&nbsp;Uhr</td></tr>
         ''', html)
 
-    if datetime['datum'] is not None:
-        data['session_date'] = get_date(datetime['datum'].strip())
+    if date_time['datum'] is not None:
+        data['session_date'] = get_date(date_time['datum'].strip())
     else:
         print >> sys.stderr, "ERROR: No date found for Session " + str(id)
-    (starttime, endtime) = get_start_end_time(datetime['zeit'])
+    (starttime, endtime) = get_start_end_time(date_time['zeit'])
     data['session_time_start'] = starttime
     data['session_time_end'] = endtime
 
@@ -498,6 +513,43 @@ def get_document_details(dtype, id):
     elif dtype == 'submission':
         db.save_rows('submissions', data, ['submission_id'])
 
+def save_temp_file(data):
+    """
+    Speichert die übergebenen Daten in einer temporären Datei
+    und gibt den Pfad zurück
+    """
+    sha = hashlib.sha1(data).hexdigest()
+    if not os.path.exists(TMP_FOLDER):
+        os.makedirs(TMP_FOLDER)
+    path = TMP_FOLDER + os.sep + sha
+    f = open(path, 'w')
+    f.write(data)
+    f.close()
+    #print "save_temp_file(): Abgelegt in", path
+    return path
+
+def file_sha1(path):
+    """
+    Erzeugt SHA1 Prüfsumme der Datei
+    """
+    sha = hashlib.sha1()
+    content = open(path, 'r').read()
+    sha.update(content)
+    return sha.hexdigest()
+
+def file_type(path):
+    """
+    Gibt den Dateityp (MIME Type) zurück, den fileutils
+    zum Inhalt der Datei feststellen.
+    """
+    cmd = FILE_CMD + ' ' + path
+    output, error = subprocess.Popen(
+            cmd.split(' '), stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE).communicate()
+    if error != '':
+        print >> sys.stderr, "Fehler: get_filetype()", error
+    return output.strip()
+
 def get_attachments(url, forms_list):
     """
     Scrapet von der Seite mit der gegebenen URL alle Dokumente, die
@@ -507,45 +559,74 @@ def get_attachments(url, forms_list):
     br = mechanize.Browser()
     br.open(url)
     for form in forms_list:
+        print "Lade Anhang " + form
         (doctype, attachment_id) = parse_formname(form)
         content = None
-        if not is_attachment_in_db(attachment_id):
-            print "Lade Anhang " + form
-            br.select_form(name=form)
-            response = br.submit()
-            data = response.read()
-            headers = response.info()
-            if response.code == 200:
-                # Datei im Cache speichern
-                folder = get_cache_path(form)
-                try:
-                    os.makedirs(folder)
-                except:
-                    pass
-                (doctype, docid) = parse_formname(form)
-                full_filepath = folder + os.sep + form + '.' + doctype
-                f = open(full_filepath, 'w+')
-                f.write(data)
-                f.close()
-                
-                ret[attachment_id] = {
-                    'attachment_id': attachment_id,
-                    'attachment_mimetype': headers['content-type'].lower().decode('utf-8'),
-                    'attachment_size': len(data),
-                }
-                if 'Content-Disposition' in headers:
-                    ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
-                if 'content-type' in headers and headers['content-type'].lower() == 'application/pdf':
-                    content = get_text_from_pdf(full_filepath)
-                if content is not None and content is not False:
-                    ret[attachment_id]['attachment_content'] = content
-                db.save_rows('attachments', ret[attachment_id],
-                    ['attachment_id'])
-
+        br.select_form(name=form)
+        response = br.submit()
+        data = response.read()
+        STATS['bytes_loaded'] += len(data)
+        headers = response.info()
+        if response.code == 200:
+            # Dict für die Datenbank
+            ret[attachment_id] = {
+                'attachment_id': attachment_id,
+                'attachment_mimetype': headers['content-type'].lower().decode('utf-8'),
+                'attachment_size': len(data),
+                'attachment_lastmod': datetime.datetime.utcnow().isoformat(' '),
+            }
+            if 'Content-Disposition' in headers:
+                ret[attachment_id]['attachment_filename'] = headers['Content-Disposition'].split('filename=')[1].decode('utf-8')
+            STATS['attachments_loaded'] += 1
+            # Datei erst mal temporaer ablegen
+            temp_path = save_temp_file(data)
+            # Datei prüfen
+            ftype = file_type(temp_path)
+            if ftype != ret[attachment_id]['attachment_mimetype']:
+                print >> sys.stderr, "Fehler: MIME-Type der geladenen Datei entspricht nicht dem HTTP-Header", ret[attachment_id]['attachment_mimetype']
+            # TODO: file_type mit doctype abgleichen
+            
+            # Feststellen, ob Datei schon existiert
+            folder = get_cache_path(form)
+            full_filepath = folder + os.sep + form + '.' + doctype
+            overwrite = True
+            if os.path.exists(full_filepath):
+                # Datei nicht austauschen, wenn identisch
+                old_stat = os.stat(full_filepath)
+                new_stat = os.stat(temp_path)
+                if old_stat.st_size == new_stat.st_size:
+                    sha = file_sha1(full_filepath)
+                    if sha == file_sha1(temp_path):
+                        overwrite = False
+                        print "Datei", full_filepath, "bleibt unverändert"
+                    else:
+                        print "Datei", full_filepath, "wird überschrieben (verschiedene Prüfsumme)"
+                        STATS['attachments_replaced'] += 1
+                else:
+                    print "Datei", full_filepath, "wird überschrieben (verschiedene Dateigröße)"
+                    STATS['attachments_replaced'] += 1
             else:
-                print >> (sys.stderr, "ERROR: Fehlerhafter HTTP Antwortcode", 
-                    response.code)
-            br.back()
+                print "Datei", full_filepath, "ist neu"
+                STATS['attachments_new'] += 1
+            if overwrite:
+                # Temp-Datei an ihren endgültigen Ort bewegen
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+                os.rename(temp_path, full_filepath)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                if ret[attachment_id]['attachment_mimetype'] == 'application/pdf':
+                    # PDF-Inhalt auslesen
+                    content = get_text_from_pdf(full_filepath)
+                    if content is not None and content is not False:
+                        ret[attachment_id]['attachment_content'] = content
+                # Objekt in die Datenbank schreiben
+                db.execute("DELETE FROM attachments WHERE attachment_id=%s", [attachment_id])
+                db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
+        else:
+            print >> (sys.stderr, "Fehler: Fehlerhafter HTTP Antwortcode", 
+                response.code)
+        br.back()
     return ret
 
 def get_date(string):
@@ -558,7 +639,12 @@ def get_date(string):
     result = re.match(r'([0-9]+)\.\s+([^\s]+)\s+([0-9]{4})', string)
     if result is not None:
         day = int(result.group(1))
-        month = months[result.group(2).encode('utf-8')]
+	mkey = result.group(2).encode('utf-8')
+        if mkey in months:
+            month = months[result.group(2).encode('utf-8')]
+        else:
+            print >> sys.stderr, "Falsches Datumsformat:", string
+            return None
         year = int(result.group(3))
         return "%d-%02d-%02d" % (year, month, day)
 
@@ -650,7 +736,7 @@ def is_attachment_in_db(id):
 def get_cache_path(formname):
     """
     Ermittelt anhand des Formularnamens wie "pdf12345" den Pfad
-    zum Speichern der Datei
+    des Ordners zum Speichern der Datei
     """
     firstfolder = formname[-1]     # letzte Ziffer
     secondfolder = formname[-2:-1] # vorletzte Ziffer
@@ -661,7 +747,7 @@ def get_cache_path(formname):
 def get_text_from_pdf(path):
     """Extrahiere den Text aus einer PDF-Datei"""
     text = ''
-    cmd = PDFTOTEXT + ' ' + path + ' -'
+    cmd = PDFTOTEXT_CMD + ' ' + path + ' -'
     text, error = subprocess.Popen(
         cmd.split(' '), stdout=subprocess.PIPE,
         stderr=subprocess.PIPE).communicate()
@@ -710,6 +796,12 @@ def list_option(s):
         return []
     return s.split(',')
         
+def print_stats():
+    """
+    Simple Statistik-Ausgabe
+    """
+    for k in STATS.keys():
+        print k, ': ', STATS[k]
 
 if __name__ == '__main__':
     parser = OptionParser()
@@ -728,4 +820,5 @@ if __name__ == '__main__':
     db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
     
     scrape_sessions(years, months)
-
+    print_stats()
+    
