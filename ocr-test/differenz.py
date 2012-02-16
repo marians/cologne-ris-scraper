@@ -42,7 +42,7 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
     file_a = read_file(args[0])
     file_b = read_file(args[1])
-    if file_a and file_b:
+    if file_a != False and file_b != False:
         laenge = max(len(file_a), len(file_b))
         lev = levenshtein(file_a, file_b)
         print "Differenz: %d von %d Zeichen (%.1f%%)" % (lev, laenge, ((float(lev)/float(laenge)) * 100.0))
