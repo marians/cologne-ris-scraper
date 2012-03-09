@@ -112,3 +112,11 @@ CREATE TABLE `submissions2attachments` (
   `attachment_role` varchar(255) DEFAULT NULL,
   UNIQUE KEY `attachment_id` (`attachment_id`,`submission_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS `attachment_exclusions` (
+  `attachment_id` int(10) unsigned NOT NULL,
+  `excluded_since` datetime NOT NULL COMMENT 'Datum, ab welchem das Dokument gesperrt ist (Serverzeit)',
+  `reason_code` varchar(30) NOT NULL COMMENT 'Begruendung als maschinenlesbarer Code',
+  `reason_text` text COMMENT 'Ausfuehrliche Begruendung, kann HTML z.B. mit Links enthalten',
+  PRIMARY KEY  (`attachment_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
