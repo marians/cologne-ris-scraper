@@ -1,65 +1,31 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-    Scraper für das Kölner Ratsinformationssystem
-    
-    Copyright (c) 2012 Marian Steinbach
+Scraper für das Kölner Ratsinformationssystem
 
-    Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und 
-    der zugehörigen Dokumentationen (die "Software") erhält, die Erlaubnis 
-    erteilt, sie uneingeschränkt zu benutzen, inklusive und ohne Ausnahme, dem
-    Recht, sie zu verwenden, kopieren, ändern, fusionieren, verlegen 
-    verbreiten, unterlizenzieren und/oder zu verkaufen, und Personen, die diese 
-    Software erhalten, diese Rechte zu geben, unter den folgenden Bedingungen:
+Copyright (c) 2012 Marian Steinbach
+
+Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und
+der zugehörigen Dokumentationen (die "Software") erhält, die Erlaubnis
+erteilt, sie uneingeschränkt zu benutzen, inklusive und ohne Ausnahme, dem
+Recht, sie zu verwenden, kopieren, ändern, fusionieren, verlegen
+verbreiten, unterlizenzieren und/oder zu verkaufen, und Personen, die diese
+Software erhalten, diese Rechte zu geben, unter den folgenden Bedingungen:
     
-    Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen 
-    Kopien oder Teilkopien der Software beizulegen.
-    
-    Die Software wird ohne jede ausdrückliche oder implizierte Garantie 
-    bereitgestellt, einschließlich der Garantie zur Benutzung für den
-    vorgesehenen oder einen bestimmten Zweck sowie jeglicher Rechtsverletzung, 
-    jedoch nicht darauf beschränkt. In keinem Fall sind die Autoren oder 
-    Copyrightinhaber für jeglichen Schaden oder sonstige Ansprüche haftbar zu 
-    machen, ob infolge der Erfüllung eines Vertrages, eines Delikts oder anders 
-    im Zusammenhang mit der Software oder sonstiger Verwendung der Software 
-    entstanden.
+Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen
+Kopien oder Teilkopien der Software beizulegen.
+
+Die Software wird ohne jede ausdrückliche oder implizierte Garantie
+bereitgestellt, einschließlich der Garantie zur Benutzung für den
+vorgesehenen oder einen bestimmten Zweck sowie jeglicher Rechtsverletzung,
+jedoch nicht darauf beschränkt. In keinem Fall sind die Autoren oder
+Copyrightinhaber für jeglichen Schaden oder sonstige Ansprüche haftbar zu
+machen, ob infolge der Erfüllung eines Vertrages, eines Delikts oder anders
+im Zusammenhang mit der Software oder sonstiger Verwendung der Software
+entstanden.
 """
 
-### Konfiguration
-
-# Database
-DBHOST = 'localhost'
-DBUSER = 'root'
-DBPASS = ''
-DBNAME = 'cologne-ris'
-
-# Basis-URL
-BASEURL = 'http://ratsinformation.stadt-koeln.de/'
-
-# URL-Format für Sitzungs-Detailseiten
-URI_SESSION_DETAILS = 'to0040.asp?__ksinr=%d'
-# URL-Format für Antrags-Detailseite
-URI_REQUEST_DETAILS = 'ag0050.asp?__kagnr=%d'
-# URL-Format für Vorlagen-Detailseite
-URI_SUBMISSION_DETAILS = 'vo0050.asp?__kvonr=%d'
-# URL-Format für Sitzungs-Teilnehmer
-URI_ATTENDANTS = 'to0045.asp?__ctext=0&__ksinr=%d'
-# URL-Format für Gremium-Details
-URI_COMMITTEE = 'kp0040.asp?__kgrnr=%d'
-
-# Verzeichnis für die Ablage von herunter geladenen Dateien
-ATTACHMENTFOLDER = '/Volumes/Projekte-1/2012/ris-scraper-cologne/attachments'
-
-# Verzeichnis für temporäre Dateien
-TMP_FOLDER = '/Volumes/Projekte-1/2012/ris-scraper-cologne/tmp'
-
-PDFTOTEXT_CMD = '/opt/local/bin/pdftotext'
-
-# Aufruf von file (fileutils) mit MimeType-Ausgabe
-FILE_CMD = '/usr/bin/file -b --mime-type'
-
-### Ende der Konfiguration
-
+import config
 import sys
 import os
 import random
@@ -95,33 +61,8 @@ def result_string(string):
         Ist für den übergebenen String keine Schreibweise hinterlegt, wird
         das Programm mit einer Fehlermeldung abgebrochen.
     """
-    types = {
-        u'unge\xe4ndert beschlossen': 'BESCHLOSSEN_UNVERAENDERT',
-        u'ge\xe4ndert beschlossen': 'BESCHLOSSEN_GEAENDERT',
-        u'Alternative beschlossen': 'BESCHLOSSEN_ALTERNATIVE',
-        u'unter Vorbehalt beschlossen': 'BESCHLOSSEN_VORBEHALT',
-        u'unge\xe4ndert empfohlen': 'EMPFOHLEN_UNVERAENDERT',
-        u'Kenntnis genommen': 'KENNTNISNAHME',
-        u'zur\xfcckgestellt': 'ZURUECKGESTELLT',
-        u'Sache ist erledigt': 'ERLEDIGT',
-        u'zur weiteren Bearbeitung in die Verwaltung \xfcberwiesen': 
-            'UEBERWIESEN_VERWALTUNG',
-        u'im ersten Durchgang verwiesen': 'UEBERWIESEN_ERSTERDURCHGANG',
-        u'ohne Votum in nachfolgende Gremien': 'UEBERWIESEN_GREMIEN_OHNEVOTUM',
-        u'verwiesen in nachfolgende Gremien (ohne R\xfccklauf)':
-            'UEBERWIESEN_GREMIEN_OHNERUECKLAUF',
-        u'verwiesen in nachfolgende Gremien': 'UEBERWIESEN_GREMIEN',
-        u'ohne Votum verwiesen mit erneuter Wiedervorlage':
-            'UEBERWIESEN_WIEDERVORLAGE_OHNEVOTUM',
-        u'abgelehnt (in der Vorberatung)': 'ABGELEHNT_VORBERATUNG',
-        u'endg\xfcltig abgelehnt': 'ABGELEHNT_ENDGUELTIG',
-        u'endg\xfcltig zur\xfcckgezogen': 'ZURUECKGEZOGEN_ENDGUELTIG',
-        u'\xdcbergang zum n\xe4chsten Tagesordnungspunkt':
-            'NAECHSTER_TAGESORDNUNGSPUNKT',
-        u'mit \xc4nderungen empfohlen': 'EMPFOHLEN_GAENDERT',
-    }
-    if string in types:
-        return types[string]
+    if string in config.RESULT_TYPES:
+        return config.RESULT_TYPES[string]
     print >> sys.stderr, "ERROR: Unknown result type string", [string]
     sys.exit()
 
@@ -156,7 +97,7 @@ def get_session_ids(year, month):
     Jahres und gibt die Sitzungs-IDs als Liste zurück.
     """
     ids = []
-    url = BASEURL + 'si0040.asp?__cmonat='+str(month)+'&__cjahr='+str(year)
+    url = config.BASEURL + (URI_CALENDAR % (month, year))
     data = scrape("""
     {*
         <td><a href="to0040.asp?__ksinr={{ [ksinr]|int }}"></a></td>
@@ -168,7 +109,7 @@ def get_session_ids(year, month):
 
 def get_session_detail_url(session_id):
     """Gibt anhand einer Sitzungs-ID die Detail-URL zurück"""
-    return BASEURL + (URI_SESSION_DETAILS % session_id)
+    return config.BASEURL + (config.URI_SESSION_DETAILS % session_id)
 
 def get_session_details(id):
     """
@@ -450,11 +391,11 @@ def get_document_details(dtype, id):
     data = {}
     prefix = ''
     if dtype == 'request':
-        url = BASEURL + (URI_REQUEST_DETAILS % id)
+        url = config.BASEURL + (URI_REQUEST_DETAILS % id)
         prefix = 'request_'
         print "Lade Antrag", id, url
     elif dtype == 'submission':
-        url = BASEURL + (URI_SUBMISSION_DETAILS % id)
+        url = config.BASEURL + (URI_SUBMISSION_DETAILS % id)
         prefix = 'submission_'
         print "Lade Vorlage", id, url
     data[prefix + 'id'] = id
@@ -519,9 +460,9 @@ def save_temp_file(data):
     und gibt den Pfad zurück
     """
     sha = hashlib.sha1(data).hexdigest()
-    if not os.path.exists(TMP_FOLDER):
-        os.makedirs(TMP_FOLDER)
-    path = TMP_FOLDER + os.sep + sha
+    if not os.path.exists(config.TMP_FOLDER):
+        os.makedirs(config.TMP_FOLDER)
+    path = config.TMP_FOLDER + os.sep + sha
     f = open(path, 'w')
     f.write(data)
     f.close()
@@ -542,7 +483,7 @@ def file_type(path):
     Gibt den Dateityp (MIME Type) zurück, den fileutils
     zum Inhalt der Datei feststellen.
     """
-    cmd = FILE_CMD + ' ' + path
+    cmd = config.FILE_CMD + ' ' + path
     output, error = subprocess.Popen(
             cmd.split(' '), stdout=subprocess.PIPE,
             stderr=subprocess.PIPE).communicate()
@@ -665,7 +606,7 @@ def get_session_attendants(id):
     Scrapet die Liste der (eingeladenen) Teilnehmer einer Sitzung
     """
     global db
-    url = BASEURL + (URI_ATTENDANTS % id)
+    url = config.BASEURL + (config.URI_ATTENDANTS % id)
     print "Lade Anwesenheitsliste", url
     html = urllib2.urlopen(url).read()
     data = scrape("""
@@ -706,7 +647,7 @@ def get_committee_details(id):
     Scrapet Details zu einem Gremium
     """
     global db
-    url = BASEURL + (URI_COMMITTEE % id)
+    url = config.BASEURL + (config.URI_COMMITTEE % id)
     print "Lade Gremium", url
     html = urllib2.urlopen(url).read()
     data = {}
@@ -740,14 +681,14 @@ def get_cache_path(formname):
     """
     firstfolder = formname[-1]     # letzte Ziffer
     secondfolder = formname[-2:-1] # vorletzte Ziffer
-    ret = (ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep + 
+    ret = (config.ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep + 
         str(secondfolder))
     return ret
 
 def get_text_from_pdf(path):
     """Extrahiere den Text aus einer PDF-Datei"""
     text = ''
-    cmd = PDFTOTEXT_CMD + ' ' + path + ' -'
+    cmd = config.PDFTOTEXT_CMD + ' ' + path + ' -'
     text, error = subprocess.Popen(
         cmd.split(' '), stdout=subprocess.PIPE,
         stderr=subprocess.PIPE).communicate()
@@ -817,7 +758,7 @@ if __name__ == '__main__':
     years = list_option(options.years)
     months = list_option(options.months)
     
-    db = DataStore(DBNAME, DBHOST, DBUSER, DBPASS)
+    db = DataStore(config.DBNAME, config.DBHOST, config.DBUSER, config.DBPASS)
     
     scrape_sessions(years, months)
     print_stats()
