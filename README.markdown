@@ -65,8 +65,10 @@ Danach sollte sich der Scraper mit dem Kommando "python scrape.py" an der Komman
 
 ###Sind die Daten selbst irgendwo verfügbar?
 
-Aktuell noch nicht. Sobald diese eine ausreichende Vollständigkeit erreicht haben, sollen sie irgendwo als MySQL-Dump oder
-CSV Download verfügbar gemacht werden. Weitere Informationen werden dann hier zu finden sein.
+Die Daten aus dem Kölner RIS sind vollständig über die API von Offenes Köln zugänglich. Weiteres Scrapen des Kölner RIS
+ist also nicht nötig und nicht sinnvoll. Informationen unter
+
+http://offeneskoeln.de/api/
 
 ###Unter welcher Lizenz steht der Quellcode?
 
