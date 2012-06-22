@@ -84,7 +84,8 @@ Danach können die folgenden Schritte unter normalen Nutzerrechten ausgeführt w
     mysql -u root -p -e "GRANT ALL ON risscraper.* TO 'risscraper'@'localhost';"
     mysql -u root -p -e "FLUSH PRIVILEGES;"
     git clone https://github.com/marians/cologne-ris-scraper.git
-
+    mkdir attachments
+    mkdir tmp
 
 ###Sind die Daten selbst irgendwo verfügbar?
 
