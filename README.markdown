@@ -64,7 +64,7 @@ Zunächst muss geklärt werden, ob Python und MySQL vorhanden sind.
 
 Danach sollte sich der Scraper mit dem Kommando "python scrape.py" an der Kommandozeile starten lassen.
 
-Auf einem leeren Debian 6 kann die benötigte Software wie folgt installiert werden:
+Auf einem leeren Debian 6 kann die benötigte Software wie folgt installiert werden (als root):
 
     apt-get update
     apt-get install mysql-server
@@ -76,6 +76,13 @@ Auf einem leeren Debian 6 kann die benötigte Software wie folgt installiert wer
     cd scrapemark-0.9/
     python setup.py install
     cd ..
+
+Danach können die folgenden Schritte unter normalen Nutzerrechten ausgeführt werden:
+
+    mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS risscraper;"
+    mysql -u root -p -e "CREATE USER 'risscraper'@'localhost' IDENTIFIED BY 'risscraper';"
+    mysql -u root -p -e "GRANT ALL ON risscraper.* TO 'risscraper'@'localhost';"
+    mysql -u root -p -e "FLUSH PRIVILEGES;"
     git clone https://github.com/marians/cologne-ris-scraper.git
 
 TODO: Beschreibung der Erzeugung eines MySQL-Nutzers und einer Datenbank für das Projekt.
