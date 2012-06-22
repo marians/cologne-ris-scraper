@@ -58,9 +58,9 @@ Zum Speichern der Daten wird aktuell ein MySQL-Server benötigt.
 Zunächst muss geklärt werden, ob Python und MySQL vorhanden sind.
 
 1. Benötigte Python-Module installieren
-2. Leere MySQL-Datenbank anlegen
+2. Leere MySQL-Datenbank anlegen und einen Nutzer
 3. Die Datei setup_mysql.sql in der neuen Datenbank ausführen. Damit werden die benötigten Tabellen angelegt.
-4. Die Datenbank-Konfiguration in scrape.py anpassen
+4. Die Konfigurationsdatei config_dist.py zu config.py kopieren. Dann config.py anpassen.
 
 Danach sollte sich der Scraper mit dem Kommando "python scrape.py" an der Kommandozeile starten lassen.
 
