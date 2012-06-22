@@ -5,13 +5,13 @@
 DBHOST = 'localhost'
 DBUSER = 'risscraper'
 DBPASS = 'risscraper'
-DBNAME = 'cologne-ris'
+DBNAME = 'risscraper'
 
 # Basis-URL (mit / am Ende)
-BASEURL = 'http://buergerinfo.halle.de/'
+BASEURL = 'http://ratsinformation.stadt-koeln.de/'
 
 # URL-Format für Sitzungskalender
-URI_CALENDAR = 'si0040.asp?__cmonat=%d&__cjahr=%d'
+URI_CALENDAR = 'si0040.asp?__cmonat=%s&__cjahr=%s'
 # URL-Format für Sitzungs-Detailseiten
 URI_SESSION_DETAILS = 'to0040.asp?__ksinr=%d'
 # URL-Format für Antrags-Detailseite
