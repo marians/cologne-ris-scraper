@@ -85,7 +85,6 @@ Danach können die folgenden Schritte unter normalen Nutzerrechten ausgeführt w
     mysql -u root -p -e "FLUSH PRIVILEGES;"
     git clone https://github.com/marians/cologne-ris-scraper.git
 
-TODO: Beschreibung der Erzeugung eines MySQL-Nutzers und einer Datenbank für das Projekt.
 
 ###Sind die Daten selbst irgendwo verfügbar?
 
