@@ -97,7 +97,7 @@ def get_session_ids(year, month):
     Jahres und gibt die Sitzungs-IDs als Liste zurück.
     """
     ids = []
-    url = config.BASEURL + (URI_CALENDAR % (month, year))
+    url = config.BASEURL + (config.URI_CALENDAR % (month, year))
     data = scrape("""
     {*
         <td><a href="to0040.asp?__ksinr={{ [ksinr]|int }}"></a></td>
@@ -391,11 +391,11 @@ def get_document_details(dtype, id):
     data = {}
     prefix = ''
     if dtype == 'request':
-        url = config.BASEURL + (URI_REQUEST_DETAILS % id)
+        url = config.BASEURL + (config.URI_REQUEST_DETAILS % id)
         prefix = 'request_'
         print "Lade Antrag", id, url
     elif dtype == 'submission':
-        url = config.BASEURL + (URI_SUBMISSION_DETAILS % id)
+        url = config.BASEURL + (config.URI_SUBMISSION_DETAILS % id)
         prefix = 'submission_'
         print "Lade Vorlage", id, url
     data[prefix + 'id'] = id
@@ -647,7 +647,7 @@ def get_committee_details(id):
     Scrapet Details zu einem Gremium
     """
     global db
-    url = config.BASEURL + (config.URI_COMMITTEE % id)
+    url = config.BASEURL + (config.URI_COMMITTEE % int(id))
     print "Lade Gremium", url
     html = urllib2.urlopen(url).read()
     data = {}
