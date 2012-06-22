@@ -56,12 +56,30 @@ Zum Speichern der Daten wird aktuell ein MySQL-Server benötigt.
 
 ###Wie funktioniert die Installation?
 
+Zunächst muss geklärt werden, ob Python und MySQL vorhanden sind.
+
 1. Benötigte Python-Module installieren
 2. Leere MySQL-Datenbank anlegen
 3. Die Datei setup_mysql.sql in der neuen Datenbank ausführen. Damit werden die benötigten Tabellen angelegt.
 4. Die Datenbank-Konfiguration in scrape.py anpassen
 
 Danach sollte sich der Scraper mit dem Kommando "python scrape.py" an der Kommandozeile starten lassen.
+
+Auf einem leeren Debian 6 kann die benötigte Software wie folgt installiert werden:
+
+    apt-get update
+    apt-get install mysql-server
+    apt-get install git
+    apt-get install python-mysqldb
+    apt-get install python-mechanize
+    wget http://arshaw.com/scrapemark/downloads/scrapemark-0.9.tar.gz
+    tar xzf scrapemark-0.9.tar.gz
+    cd scrapemark-0.9/
+    python setup.py install
+    cd ..
+    git clone https://github.com/marians/cologne-ris-scraper.git
+
+TODO: Beschreibung der Erzeugung eines MySQL-Nutzers und einer Datenbank für das Projekt.
 
 ###Sind die Daten selbst irgendwo verfügbar?
 
