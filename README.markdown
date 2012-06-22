@@ -12,6 +12,15 @@ Das Kölner RIS basiert auf der Software SessionNet, die bei vielen Gemeinden, L
 Körperschaften im Einsatz ist. Daher sollte sich dieser Scraper mit leichten Anpassungen auch für andere
 SessionNet Instanzen einsetzen lassen.
 
+##Gruppe/Mailingliste
+
+Wenn Du den Scraper in Deiner Gegend einsetzen willst, tritt bitte dieser Gruppe bei:
+
+https://groups.google.com/forum/#!forum/ris-oeffner
+
+Dort solltest Du Ansprechpartner finden, die ähnliches vorhabenw wie Du.
+
+
 ##FAQ
 
 ###Was ist ein Scraper?
