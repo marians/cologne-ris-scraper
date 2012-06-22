@@ -48,7 +48,6 @@ Bisher wurde der Scraper nur mit Python 2.7 getestet.
 * scrapemark
 * mechanize
 * MySQLdb
-* pdfminer
 
 ###Was wird außerdem benötigt?
 
