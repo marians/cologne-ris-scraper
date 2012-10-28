@@ -18,7 +18,7 @@ Wenn Du den Scraper in Deiner Gegend einsetzen willst, tritt bitte dieser Gruppe
 
 https://groups.google.com/forum/#!forum/ris-oeffner
 
-Dort solltest Du Ansprechpartner finden, die ähnliches vorhabenw wie Du.
+Dort solltest Du Ansprechpartner finden, die ähnliches vorhaben wie Du.
 
 
 ##FAQ
