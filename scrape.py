@@ -11,7 +11,7 @@ erteilt, sie uneingeschränkt zu benutzen, inklusive und ohne Ausnahme, dem
 Recht, sie zu verwenden, kopieren, ändern, fusionieren, verlegen
 verbreiten, unterlizenzieren und/oder zu verkaufen, und Personen, die diese
 Software erhalten, diese Rechte zu geben, unter den folgenden Bedingungen:
-    
+
 Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen
 Kopien oder Teilkopien der Software beizulegen.
 
@@ -31,7 +31,6 @@ import os
 import random
 import re
 import urllib2
-from StringIO import StringIO
 from scrapemark import scrape
 import mechanize
 from datastore import DataStore
@@ -39,6 +38,7 @@ import subprocess
 from optparse import OptionParser
 import datetime
 import hashlib
+import json
 
 # Hier drin werden Statistiken gesammelt
 STATS = {
@@ -48,10 +48,16 @@ STATS = {
     'attachments_replaced': 0
 }
 
+# Queue für abzurufende Vorlagen und Anträge
+submission_queue = []
+request_queue = []
+
+
 def shuffle(l):
     randomly_tagged_list = [(random.random(), x) for x in l]
     randomly_tagged_list.sort()
     return [x for (r, x) in randomly_tagged_list]
+
 
 def result_string(string):
     """
@@ -66,21 +72,25 @@ def result_string(string):
     print >> sys.stderr, "ERROR: Unknown result type string", [string]
     sys.exit()
 
+
 def cleanup_identifier_string(string):
     """Bereinigt eine Dokumenten-ID und gibt sie zurück."""
     if string is None:
         return string
     return string.replace(' ', '')
 
+
 def parse_formname(formname):
     """
-    Extrahiert aus einem Formularnamen wie 'pdf12345' den Teil 'pdf' und 
+    Extrahiert aus einem Formularnamen wie 'pdf12345' den Teil 'pdf' und
     '12345' und gibt beide Teile als Tupel zurück
     """
-    matches = re.match(r'^([a-z]+)([0-9]+)$', formname)
-    if matches is not None:
-        return (matches.group(1), int(matches.group(2)))
+    if formname is not None:
+        matches = re.match(r'^([a-z]+)([0-9]+)$', formname)
+        if matches is not None:
+            return (matches.group(1), int(matches.group(2)))
     return None
+
 
 def get_committee_id_by_name(cname):
     """
@@ -91,13 +101,15 @@ def get_committee_id_by_name(cname):
     if len(result) == 1:
         return result[0]['committee_id']
 
+
 def get_session_ids(year, month):
     """
-    Scrapet alle publizierten Sitzungen zum gegebenen Monat des gegebenen 
+    Scrapet alle publizierten Sitzungen zum gegebenen Monat des gegebenen
     Jahres und gibt die Sitzungs-IDs als Liste zurück.
     """
     ids = []
     url = config.BASEURL + (config.URI_CALENDAR % (month, year))
+    print "Lade Sitzungen für Jahr", year, ", Monat", month
     data = scrape("""
     {*
         <td><a href="to0040.asp?__ksinr={{ [ksinr]|int }}"></a></td>
@@ -105,11 +117,15 @@ def get_session_ids(year, month):
     """, url=url)
     for item in data['ksinr']:
         ids.append(item)
+    if options.verbose:
+        print "Anzahl gefundene Sitzungen:", len(ids)
     return ids
+
 
 def get_session_detail_url(session_id):
     """Gibt anhand einer Sitzungs-ID die Detail-URL zurück"""
     return config.BASEURL + (config.URI_SESSION_DETAILS % session_id)
+
 
 def get_session_details(id):
     """
@@ -160,18 +176,20 @@ def get_session_details(id):
         get_committee_details(data['committee_id'])
     get_agenda_and_attachments(id, html)
     get_session_attendants(id)
-    db.save_rows('sessions', data, ['session_id'])
+    if not options.simulate:
+        db.save_rows('sessions', data, ['session_id'])
+
 
 def get_agenda_and_attachments(session_id, html):
     """
     Liest die Tagesordnungspunkte aus dem HTML der Sitzungs-
     Detailseite und speichert diese sowie die verlinkten Anhänge.
-    
     Das HTML wird mehrmals geparst, um alle Details zu bekommen.
-    - Beim ersten Mal werden alle Zeilen der Tagesordnungs-
-      Tabelle als ganzes in "all" geparst.
-    - Beim zweiten Durchgang werden alle Zeilen, die einen Link
-      enthalten, in "linked" gespeichert.
+    - Beim ersten Mal werden alle öffentlichen Punkte der Tagesordnungs-
+      Tabelle in "publicto" abgelegt.
+    - Das gleiche geschieht mit den nicht-öffentlichen Punkten in "nonpublicto"
+    - Beim nächsten Durchgang werden alle Zeilen, die einen Link
+      enthalten, in "linkedto" gespeichert.
     - Beim dritten Durchgang werden alle Zeilen mit Dateianhängen
       in "files" gesammelt.
     Zuletzt werden die drei Strukturen anhand der Nummer des
@@ -180,7 +198,7 @@ def get_agenda_and_attachments(session_id, html):
     global db
     html = html.replace('&nbsp;', ' ')
     html = html.replace('<br>', '; ')
-    
+
     # 1. Öffentlichen Tagesordnungspunkte mit ID auslesen (immer zwei aufeinander folgende Tabellenzeilen)
     publicto = scrape('''
     {*
@@ -202,7 +220,7 @@ def get_agenda_and_attachments(session_id, html):
         for entry in publicto['agendaitem']:
             if 'id' not in entry:
                 continue
-            all_items_by_id[entry['id']] = { 
+            all_items_by_id[entry['id']] = {
                 'agendaitem_id': entry['id'],
                 'agendaitem_public': 1,
                 'agendaitem_identifier': None,
@@ -213,9 +231,11 @@ def get_agenda_and_attachments(session_id, html):
                 all_items_by_id[entry['id']]['agendaitem_identifier'] = entry['f1']
             if 'f2' in entry and entry['f2'] != '':
                 all_items_by_id[entry['id']]['agendaitem_subject'] = entry['f2']
-            if 'f5' in entry and entry['f5'] != '' and entry['f5'].find('Ergebnis:') != -1:
+            if ('f5' in entry and entry['f5'] != ''
+                and entry['f5'] is not None and
+                entry['f5'].find('Ergebnis:') != -1):
                 all_items_by_id[entry['id']]['agendaitem_result'] = result_string(entry['f5'].replace('Ergebnis: ', ''))
-    
+
     # 2. Nichtöffentliche Tagesordnungspunkte mit ID lesen
     nonpublicto = scrape('''
     <h2 class="smc_h2">Nicht &ouml;ffentlicher Teil:</h2>
@@ -231,7 +251,7 @@ def get_agenda_and_attachments(session_id, html):
             for entry in nonpublicto['agendaitem']:
                 if 'id' not in entry:
                     continue
-                all_items_by_id[entry['id']] = { 
+                all_items_by_id[entry['id']] = {
                     'agendaitem_id': entry['id'],
                     'agendaitem_public': 0,
                     'agendaitem_identifier': None,
@@ -242,117 +262,73 @@ def get_agenda_and_attachments(session_id, html):
                 if 'f2' in entry and entry['f2'] != '':
                     all_items_by_id[entry['id']]['agendaitem_subject'] = entry['f2']
     # Alle Tagesordnungspunkte in die Datenbank schreiben
-    db.save_rows('agendaitems', all_items_by_id.values(), ['agendaitem_id'])
-    
-    # 3. Verlinkung zwischen Tagesordnungspunkten und Anträgen (requests) bzw. Vorlagen (submissions) auslesen
-    linkedto = scrape('''
-    {*
-        <tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
-            <td></td>
-            <td>
-                {*
-                    <a href="vo0050.asp?__kvonr={{ [agendaitem].[submissions].kvonr|int }}&amp;voselect={{ [agendaitem].[submissions].voselect|int }}">{{ [agendaitem].[submissions].subject }}</a>
-                *}
-                {*
-                    <a href="ag0050.asp?__kagnr={{ [agendaitem].[requests].kagnr|int }}&amp;voselect={{ [agendaitem].[requests].voselect|int }}">{{ [agendaitem].[requests].subject }}</a>
-                *}
-            </td>
-        </tr>
-    *}
-    ''', html)
-    request_links = []
-    submission_links = []
-    if 'agendaitem' in linkedto and isinstance(linkedto['agendaitem'], list):
-        for entry in linkedto['agendaitem']:
-            if not 'id' in entry:
-                continue
-            if ('submissions' in entry and entry['submissions'] != []) or ('requests' in entry and entry['requests'] != []):
-                if 'submissions' in entry:
-                    for doc in entry['submissions']:
-                        submission_links.append({'agendaitem_id': entry['id'], 'submission_id': doc['kvonr']})
-                        #if not is_document_complete('submission', doc['kvonr']):
-                        get_document_details('submission', doc['kvonr'])
-                if 'requests' in entry:
-                    for doc in entry['requests']:
-                        request_links.append({'agendaitem_id': entry['id'], 'request_id': doc['kagnr']})
-                        #if not is_document_complete('request', doc['kagnr']):
-                        get_document_details('request', doc['kagnr'])
-    # Alle Verknüfungen in die Datenbank schreiben
-    db.save_rows('agendaitems2submissions', submission_links, ['agendaitem_id', 'submission_id'])
-    db.save_rows('agendaitems2requests', request_links, ['agendaitem_id', 'request_id'])
-    
-    # 4. Links von Agendaitem-IDs zu Attachments auslesen
-    attachmentto = scrape('''
-    {*
-        <tr id="smc_contol_to_1_{{ [agendaitem].id|int }}">
-            <td/>
-            <td/>
-            <td>
-                {*
-                    <a href="javascript:document.{{ [agendaitem].[docs1].formname }}.submit();">{{ [agendaitem].[docs1].linktitle }}</a>
-                *}
-            </td>
-        </tr>
-        <tr>
-            <td/>
-            <td/>
-            <td>
-                {*
-                    <a href="javascript:document.{{ [agendaitem].[docs2].formname }}.submit();">{{ [agendaitem].[docs2].linktitle }}</a>
-                *}
-            </td>
-        </tr>
-    *}
-    ''', html)
-    attachements_by_id = {} # wird hier aufgefüllt
-    if ('agendaitem' in attachmentto) and (
-        isinstance(attachmentto['agendaitem'], list)):
-        # Bereinigung
-        for entry in attachmentto['agendaitem']:
-            if not 'id' in entry:
-                continue
-            if ('docs1' in entry and entry['docs1'] != []) or ('docs2' in entry and entry['docs2'] != []):
-                attachements_by_id[entry['id']] = []
-                if 'docs1' in entry:
-                    for doc in entry['docs1']:
-                        attachements_by_id[entry['id']].append(doc)
-                if 'docs2' in entry:
-                    for doc in entry['docs2']:
-                        attachements_by_id[entry['id']].append(doc)
-    new_attachment_formnames = []
-    for id in attachements_by_id:
-        for attachment in attachements_by_id[id]:
-            #print id, attachment
-            if 'formname' in attachment and 'linktitle' in attachment:
-                (doctype, docid) = parse_formname(attachment['formname'])
-                dataset = {
-                    'agendaitem_id': id,
-                    'attachment_id': docid,
-                    'attachment_role': attachment['linktitle']
-                }
-                db.save_rows('agendaitems2attachments', dataset, ['agendaitem_id', 'attachment_id'])
-                new_attachment_formnames.append(attachment['formname'])
+    if not options.simulate:
+        db.save_rows('agendaitems', all_items_by_id.values(), ['agendaitem_id'])
 
-    # 5. Attachments außerhalb der Tagesordnung erfassen (Einladung, Niederschrift)
-    furtherattachments = scrape('''
+    submission_links = scrape('''
+        {*
+            <a href="vo0050.asp?__kvonr={{ []|int }}&amp;voselect=''' + str(session_id) + '''">
+        *}
+        ''', html)
+    request_links = scrape('''
+        {*
+            <a href="vo0050.asp?__kagnr={{ []|int }}&amp;voselect=''' + str(session_id) + '''">
+        *}
+        ''', html)
+    if options.verbose:
+        print "Gefundene Vorlagen (" + str(len(submission_links)) + "):", submission_links
+        print "Gefundene Anträge (" + str(len(request_links)) + "):", request_links
+
+    # in Queue ablegen
+    if submission_links is not None:
+        for submission_id in submission_links:
+            submission_queue.append(submission_id)
+    if request_links is not None:
+        for request_id in request_links:
+            request_queue.append(request_id)
+    if options.verbose:
+        print "Vorlagen in Warteschlange:", len(submission_queue)
+        print "Anträge in Warteschlange:", len(request_queue)
+
+    # Attachments innerhalb der Tagesordnung erfassen
+    attachments_to = scrape('''
+        {*
+        <table class="smccontenttable">
+            {*
+                <a href="javascript:document.{{ [] }}.submit();"></a>
+            *}
+        </table>
+        *}
+    ''', html)
+    if options.verbose:
+        print "Anhänge in Tagesordnung:", len(attachments_to)
+
+    # 5. Alle Attachments finden, um Attachments außerhalb der Tagesordnung
+    #    zu erfassen (Einladung, Niederschrift, Wortprotokoll)
+    attachments_all = scrape('''
     {*
-        <a href="javascript:document.{{ [att].formname }}.submit();">{{ [att].linktitle }}</a>
+        <a href="javascript:document.{{ [].formname }}.submit();">{{ [].linktitle }}</a>
     *}
     ''', html)
-    if furtherattachments is not None and 'att' in furtherattachments:
-        for attachment in furtherattachments['att']:
-            if attachment['formname'] not in new_attachment_formnames:
-                (doctype, docid) = parse_formname(attachment['formname'])
+    if options.verbose:
+        print "Alle Anhänge:", len(attachments_all)
+    attachments_queue = []
+    if attachments_all is not None:
+        for att in attachments_all:
+            if att['formname'] not in attachments_to:
+                # Attachment gehört zu keinem Tagesordnungspunkt, also abrufen
+                attachments_queue.append(att['formname'])
+                (doctype, docid) = parse_formname(att['formname'])
                 dataset = {
                     'session_id': session_id,
                     'attachment_id': docid,
-                    'attachment_role': attachment['linktitle']
+                    'attachment_role': att['linktitle']
                 }
-                db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
-                new_attachment_formnames.append(attachment['formname'])
+                if not options.simulate:
+                    db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
 
-    if len(new_attachment_formnames) > 0:
-        get_attachments(get_session_detail_url(session_id), new_attachment_formnames)
+    if len(attachments_queue) > 0:
+        get_attachments(get_session_detail_url(session_id), attachments_queue)
 
 
 def is_document_complete(dtype, id):
@@ -363,15 +339,15 @@ def is_document_complete(dtype, id):
     global db
     sql = False
     if dtype == 'request':
-        sql = '''SELECT request_id FROM requests 
-            WHERE request_id=%s 
+        sql = '''SELECT request_id FROM requests
+            WHERE request_id=%s
             AND committee_id IS NOT NULL
             AND request_date IS NOT NULL
             AND request_identifier IS NOT NULL
             AND request_subject IS NOT NULL'''
     if dtype == 'submission':
-        sql = '''SELECT submission_id FROM submissions 
-            WHERE submission_id=%s 
+        sql = '''SELECT submission_id FROM submissions
+            WHERE submission_id=%s
             AND submission_type IS NOT NULL
             AND submission_date IS NOT NULL
             AND submission_identifier IS NOT NULL
@@ -382,12 +358,15 @@ def is_document_complete(dtype, id):
             return True
         return False
 
+
 def get_document_details(dtype, id):
     """
-    Scrapet die Detailseite eines Antrags (request) oder einer 
+    Scrapet die Detailseite eines Antrags (request) oder einer
     Vorlage (submission)
     """
-    global db
+    if int(id) == 0:
+        print >> sys.stderr, "Fehler: Dokumenten-ID ist 0."
+        return
     data = {}
     prefix = ''
     if dtype == 'request':
@@ -400,9 +379,7 @@ def get_document_details(dtype, id):
         print "Lade Vorlage", id, url
     data[prefix + 'id'] = id
     html = urllib2.urlopen(url).read()
-
-    html = html.replace('<br>', ' ')    
-
+    html = html.replace('<br>', '; ')
     data[prefix + 'identifier'] = cleanup_identifier_string(scrape('''
         <tr><td>Name:</td><td>{{}}</td></tr>
         ''', html))
@@ -428,13 +405,15 @@ def get_document_details(dtype, id):
     attachments = scrape('''
         <table class="smcdocbox">
         {*
-            <a href="javascript:document.{{ [form].formname }}.submit();">{{ [form].linktitle }}</a>
+            <a href="javascript:document.{{ [].formname }}.submit();">{{ [].linktitle }}</a>
         *}
         </table>
         ''', html)
-    if attachments is not None and 'form' in attachments:
+    if options.verbose:
+        print "Anhänge:", attachments
+    if attachments is not None:
         forms = []
-        for form in attachments['form']:
+        for form in attachments:
             forms.append(form['formname'])
             (doctype, docid) = parse_formname(form['formname'])
             entry = {
@@ -442,17 +421,66 @@ def get_document_details(dtype, id):
                 prefix + 'id': data[prefix + 'id'],
                 'attachment_role': form['linktitle']
             }
-            db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
-        docs = get_attachments(url, forms)
+            if not options.simulate:
+                db.save_rows(dtype + 's2attachments', entry, ['attachment_id', prefix + 'id'])
+        get_attachments(url, forms)
 
     # post-process
     if data[prefix + 'date'] is not None and data[prefix + 'date'] != '':
         data[prefix + 'date'] = get_date(data[prefix + 'date'])
 
     if dtype == 'request':
-        db.save_rows('requests', data, ['request_id'])
+        if not options.simulate:
+            db.save_rows('requests', data, ['request_id'])
     elif dtype == 'submission':
-        db.save_rows('submissions', data, ['submission_id'])
+        if not options.simulate:
+            db.save_rows('submissions', data, ['submission_id'])
+
+    # Lade Beratungsfolge.
+    # Zukünftige Beratung
+    top_future = scrape('''
+        {*
+            <tr>
+                <td>{{ [].date }}</a></td>
+                <td>{{ [].committee_name }}</td>
+                <td>{{ [].top }}</td>
+                <td>{{ [].role }}</td>
+                <td>
+                {*
+                    <a href="javascript:document.{{ [].[attachment].formname }}.submit();">{{ [].[attachment].linktitle }}</a>
+                *}
+                </td>
+            </tr>
+        *}
+        ''', html)
+    # Aufraeumarbeiten, weil das Matching auf beide Tabellen zutrifft
+    if top_future is not None:
+        for n in range(0, len(top_future)):
+            if 'docs' in top_future[n] and 'Dokumenttyp' not in top_future[n]['docs']:
+                top_future[n] = None
+
+
+    # Vergangene Beratung
+    top_past = scrape('''
+        {*
+            <tr>
+                <td><a href="to0040.asp?__ksinr={{ [].session_id|int }}&amp;toselect={{ [].agendaitem_id|int }}">{{ [].date }}</a></td>
+                <td>{{ [].committee_name }}</td>
+                <td>{{ [].top }}</td>
+                <td>{{ [].role }}</td>
+                <td>{{ [].result }}</td>
+                <td>
+                {*
+                    <a href="javascript:document.{{ [].[attachment].formname }}.submit();">{{ [].[attachment].linktitle }}</a>
+                *}
+                </td>
+            </tr>
+        *}
+        ''', html)
+    #debug
+    print "Beratungsfolge Zukunft:", json.dumps(top_future, indent=4, sort_keys=True)
+    print "Beratungsfolge Vergangenheit:", json.dumps(top_past, indent=4, sort_keys=True)
+
 
 def save_temp_file(data):
     """
@@ -469,6 +497,7 @@ def save_temp_file(data):
     #print "save_temp_file(): Abgelegt in", path
     return path
 
+
 def file_sha1(path):
     """
     Erzeugt SHA1 Prüfsumme der Datei
@@ -477,6 +506,7 @@ def file_sha1(path):
     content = open(path, 'r').read()
     sha.update(content)
     return sha.hexdigest()
+
 
 def file_type(path):
     """
@@ -491,6 +521,7 @@ def file_type(path):
         print >> sys.stderr, "Fehler: get_filetype()", error
     return output.strip()
 
+
 def get_attachments(url, forms_list):
     """
     Scrapet von der Seite mit der gegebenen URL alle Dokumente, die
@@ -498,7 +529,13 @@ def get_attachments(url, forms_list):
     """
     ret = {}
     br = mechanize.Browser()
-    br.open(url)
+    try:
+        br.open(url)
+    except:
+        print >> sys.stderr, "Fehler: URL", url, " konnte nicht geoeffnet werden."
+        return None
+    if options.verbose:
+        print "Anzahl Anhänge zu laden:", len(forms_list)
     for form in forms_list:
         print "Lade Anhang " + form
         (doctype, attachment_id) = parse_formname(form)
@@ -526,7 +563,6 @@ def get_attachments(url, forms_list):
             if ftype != ret[attachment_id]['attachment_mimetype']:
                 print >> sys.stderr, "Fehler: MIME-Type der geladenen Datei entspricht nicht dem HTTP-Header", ret[attachment_id]['attachment_mimetype']
             # TODO: file_type mit doctype abgleichen
-            
             # Feststellen, ob Datei schon existiert
             folder = get_cache_path(form)
             full_filepath = folder + os.sep + form + '.' + doctype
@@ -539,21 +575,28 @@ def get_attachments(url, forms_list):
                     sha = file_sha1(full_filepath)
                     if sha == file_sha1(temp_path):
                         overwrite = False
-                        print "Datei", full_filepath, "bleibt unverändert"
+                        if options.verbose:
+                            print "Datei", full_filepath, "bleibt unverändert"
                     else:
-                        print "Datei", full_filepath, "wird überschrieben (verschiedene Prüfsumme)"
+                        if options.verbose:
+                            print "Datei", full_filepath, "wird überschrieben (verschiedene Prüfsumme)"
                         STATS['attachments_replaced'] += 1
                 else:
-                    print "Datei", full_filepath, "wird überschrieben (verschiedene Dateigröße)"
+                    if options.verbose:
+                        print "Datei", full_filepath, "wird überschrieben (verschiedene Dateigröße)"
                     STATS['attachments_replaced'] += 1
             else:
-                print "Datei", full_filepath, "ist neu"
+                if options.verbose:
+                    print "Datei", full_filepath, "ist neu"
                 STATS['attachments_new'] += 1
             if overwrite:
                 # Temp-Datei an ihren endgültigen Ort bewegen
                 if not os.path.exists(folder):
                     os.makedirs(folder)
-                os.rename(temp_path, full_filepath)
+                if not options.simulate:
+                    os.rename(temp_path, full_filepath)
+                else:
+                    os.remove(temp_path)
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 if ret[attachment_id]['attachment_mimetype'] == 'application/pdf':
@@ -562,32 +605,44 @@ def get_attachments(url, forms_list):
                     if content is not None and content is not False:
                         ret[attachment_id]['attachment_content'] = content
                 # Objekt in die Datenbank schreiben
-                db.execute("DELETE FROM attachments WHERE attachment_id=%s", [attachment_id])
-                db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
+                if not options.simulate:
+                    db.execute("DELETE FROM attachments WHERE attachment_id=%s", [attachment_id])
+                    if options.verbose:
+                        print "Schreibe Eintrag attachment_id=%d in Tabelle 'attachments'" % attachment_id
+                    db.save_rows('attachments', ret[attachment_id], ['attachment_id'])
         else:
-            print >> (sys.stderr, "Fehler: Fehlerhafter HTTP Antwortcode", 
+            print >> (sys.stderr, "Fehler: Fehlerhafter HTTP Antwortcode",
                 response.code)
-        br.back()
+        try:
+            br.back()
+        except:
+            print >> sys.stderr, "Fehler: br.back()"
+            return None
     return ret
+
 
 def get_date(string):
     """
     Normalisiert Datumsangaben wie '1. Februar 2010' zu
     ISO-Schreibweise '2010-02-01'
     """
-    months = {'Januar':1, 'Februar':2, 'März':3, 'April':4, 'Mai':5, 'Juni':6, 'Juli':7, 'August':8, 'September':9, 'Oktober':10, 'November':11, 'Dezember':12,
-        'Jan':1, 'Feb':2, 'Mrz':3, 'Apr':4, 'Mai':5, 'Jun':6, 'Jul':7, 'Aug':8, 'Sep':9, 'Okt':10, 'Nov':11, 'Dez':12}
+    months = {'Januar': 1, 'Februar': 2, 'März': 3, u'M\xe4rz': 3, 'April': 4, 'Mai': 5,
+        'Juni': 6, 'Juli': 7, 'August': 8, 'September': 9, 'Oktober': 10,
+        'November': 11, 'Dezember': 12, 'Jan': 1, 'Feb': 2, 'Mrz': 3,
+        'Apr': 4, 'Mai': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Okt': 10,
+        'Nov': 11, 'Dez': 12}
     result = re.match(r'([0-9]+)\.\s+([^\s]+)\s+([0-9]{4})', string)
     if result is not None:
         day = int(result.group(1))
-	mkey = result.group(2).encode('utf-8')
+        mkey = result.group(2).encode('utf-8')
         if mkey in months:
             month = months[result.group(2).encode('utf-8')]
         else:
-            print >> sys.stderr, "Falsches Datumsformat:", string
+            print >> sys.stderr, "Fehler: Falsches Datumsformat:", string
             return None
         year = int(result.group(3))
         return "%d-%02d-%02d" % (year, month, day)
+
 
 def get_start_end_time(string):
     """
@@ -600,6 +655,7 @@ def get_start_end_time(string):
     if 1 not in parts:
         parts.append(None)
     return (parts[0], parts[1])
+
 
 def get_session_attendants(id):
     """
@@ -631,8 +687,10 @@ def get_session_attendants(id):
             'person_id': row['id'],
             'attendance_function': row['function']
         })
-    db.save_rows('people', persons, ['person_id'])
-    db.save_rows('attendance', attendants, ['session_id', 'person_id'])
+    if not options.simulate:
+        db.save_rows('people', persons, ['person_id'])
+        db.save_rows('attendance', attendants, ['session_id', 'person_id'])
+
 
 def is_committee_in_db(committee_id):
     """Prüft, ob das Gremium mit der ID in der Datenbank vorhanden ist."""
@@ -641,6 +699,7 @@ def is_committee_in_db(committee_id):
     if len(result) > 0:
         return True
     return False
+
 
 def get_committee_details(id):
     """
@@ -656,7 +715,9 @@ def get_committee_details(id):
         <h1 class="smc_h1">{{}}</h1>
         ''', html)
     data['committee_id'] = int(id)
-    db.save_rows('committees', data, ['committee_id'])
+    if not options.simulate:
+        db.save_rows('committees', data, ['committee_id'])
+
 
 def is_session_in_db(id):
     """Prüft, ob die Sitzung in der Datenbank vorhanden ist."""
@@ -666,6 +727,7 @@ def is_session_in_db(id):
         return True
     return False
 
+
 def is_attachment_in_db(id):
     """Prüft, ob das Attachment in der Datenbank ist."""
     global db
@@ -674,16 +736,18 @@ def is_attachment_in_db(id):
         return True
     return False
 
+
 def get_cache_path(formname):
     """
     Ermittelt anhand des Formularnamens wie "pdf12345" den Pfad
     des Ordners zum Speichern der Datei
     """
     firstfolder = formname[-1]     # letzte Ziffer
-    secondfolder = formname[-2:-1] # vorletzte Ziffer
-    ret = (config.ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep + 
+    secondfolder = formname[-2:-1]  # vorletzte Ziffer
+    ret = (config.ATTACHMENTFOLDER + os.sep + str(firstfolder) + os.sep +
         str(secondfolder))
     return ret
+
 
 def get_text_from_pdf(path):
     """Extrahiere den Text aus einer PDF-Datei"""
@@ -699,6 +763,7 @@ def get_text_from_pdf(path):
         return None
     else:
         return text.strip().decode('utf-8')
+
 
 def scrape_incomplete_datasets():
     """
@@ -717,6 +782,7 @@ def scrape_incomplete_datasets():
         if not is_document_complete('request', request['request_id']):
             get_document_details('request', request['request_id'])
 
+
 def scrape_sessions(years, months):
     """
     Mit dieser Funktion werden gezielt die Sitzungen aus einem bestimmten
@@ -728,15 +794,34 @@ def scrape_sessions(years, months):
         for month in months:
             session_ids = get_session_ids(year, month)
             for session_id in session_ids:
-                print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
+                if options.verbose:
+                    print "Jahr", year, ", Monat", month, ", Session " + str(session_id)
                 get_session_details(session_id)
+
+
+def scrape_from_queue():
+    """
+    Arbeit die submission_queue und die request_queue ab.
+    """
+    while (len(submission_queue)):
+        submission_id = submission_queue.pop()
+        if options.verbose:
+            print "Scrape Vorlage aus Warteschlange:", submission_id, ", verbleiben", len(submission_queue)
+        get_document_details('submission', submission_id)
+    while (len(request_queue)):
+        request_id = request_queue.pop()
+        if options.verbose:
+            print "Scrape Antrag aus Warteschlange:", request_id, ", verbleiben", len(request_queue)
+        get_document_details('request', request_id)
+
 
 def list_option(s):
     """Gibt string als Liste zurück. Seperator: Komma"""
     if s is None or s is '':
         return []
     return s.split(',')
-        
+
+
 def print_stats():
     """
     Simple Statistik-Ausgabe
@@ -749,17 +834,35 @@ if __name__ == '__main__':
     parser.add_option("-y", "--years", dest="years",
                       default=str(datetime.date.today().year),
                       help="Jahre, getrennt durch Komma")
-    parser.add_option("-m", "--months", dest="months", 
+    parser.add_option("-m", "--months", dest="months",
                       default=str(datetime.date.today().month),
                       help="Monate, getrennt durch Komma")
+    parser.add_option("-s", "--simulate", dest="simulate", default=False,
+                      action="store_true", help="nur simulieren, keine Daten schreiben")
+    parser.add_option("-v", "--verbose", action="store_true", default=False,
+                      help="Ausfuehrliche Ausgabe", dest="verbose")
+    parser.add_option("--session", help="Numerische ID einer einzelnen Sitzung, die gescraped werden soll",
+                      dest="session_id", type="int")
+    parser.add_option("--submission", help="Numerische ID einer einzelnen Vorlage, die gescraped werden soll",
+                      dest="submission_id", type="int")
+    parser.add_option("--request", help="Numerische ID eines einzelnen Antrags, der gescraped werden soll",
+                      dest="request_id", type="int")
     (options, args) = parser.parse_args()
 
     # Monate und Jahre in Listen umwandeln
     years = list_option(options.years)
     months = list_option(options.months)
-    
+
     db = DataStore(config.DBNAME, config.DBHOST, config.DBUSER, config.DBPASS)
-    
-    scrape_sessions(years, months)
+
+    if options.session_id:
+        get_session_details(options.session_id)
+    elif options.submission_id:
+        get_document_details('submission', options.submission_id)
+    elif options.request_id:
+        get_document_details('request', options.request_id)
+    else:
+        scrape_sessions(years, months)
+
+    scrape_from_queue()
     print_stats()
-    
