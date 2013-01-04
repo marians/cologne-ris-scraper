@@ -54,6 +54,7 @@ request_queue = []
 
 
 def shuffle(l):
+    """Randomizes list order and return list"""
     randomly_tagged_list = [(random.random(), x) for x in l]
     randomly_tagged_list.sort()
     return [x for (r, x) in randomly_tagged_list]
@@ -139,13 +140,9 @@ def get_session_details(id):
     data = {}
 
     data['session_id'] = id
-    data['session_title'] = scrape('''
-        <title>{{}}</title>
-        ''', html)
+    data['session_title'] = scrape('<title>{{}}</title>', html)
 
-    data['committee_id'] = scrape('''
-        <a href="kp0040.asp?__kgrnr={{}}"
-        ''', html)
+    data['committee_id'] = scrape('<a href="kp0040.asp?__kgrnr={{}}"', html)
 
     data['session_identifier'] = cleanup_identifier_string(scrape('''
         <tr><td>Sitzung:</td><td>{{}}</td></tr>
@@ -194,6 +191,9 @@ def get_agenda_and_attachments(session_id, html):
       in "files" gesammelt.
     Zuletzt werden die drei Strukturen anhand der Nummer des
     Tagesordnungspunktes vereint.
+
+    Beispiel einer Sitzungs-Detailseite:
+    http://ratsinformation.stadt-koeln.de/to0040.asp?__ksinr=8361
     """
     global db
     html = html.replace('&nbsp;', ' ')
@@ -290,7 +290,8 @@ def get_agenda_and_attachments(session_id, html):
         print "Vorlagen in Warteschlange:", len(submission_queue)
         print "Anträge in Warteschlange:", len(request_queue)
 
-    # Attachments innerhalb der Tagesordnung erfassen
+    # Attachments innerhalb der Tagesordnung erfassen,
+    # nur um sie hier nicht zu scrapen
     attachments_to = scrape('''
         {*
         <table class="smccontenttable">
@@ -326,9 +327,8 @@ def get_agenda_and_attachments(session_id, html):
                 }
                 if not options.simulate:
                     db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
-
-    if len(attachments_queue) > 0:
-        get_attachments(get_session_detail_url(session_id), attachments_queue)
+        if len(attachments_queue) > 0:
+            get_attachments(get_session_detail_url(session_id), attachments_queue)
 
 
 def is_document_complete(dtype, id):
@@ -459,7 +459,6 @@ def get_document_details(dtype, id):
             if 'docs' in top_future[n] and 'Dokumenttyp' not in top_future[n]['docs']:
                 top_future[n] = None
 
-
     # Vergangene Beratung
     top_past = scrape('''
         {*
@@ -478,8 +477,11 @@ def get_document_details(dtype, id):
         *}
         ''', html)
     #debug
-    print "Beratungsfolge Zukunft:", json.dumps(top_future, indent=4, sort_keys=True)
-    print "Beratungsfolge Vergangenheit:", json.dumps(top_past, indent=4, sort_keys=True)
+    #print "Beratungsfolge Zukunft:", json.dumps(top_future, indent=4, sort_keys=True)
+    #print "Beratungsfolge Vergangenheit:", json.dumps(top_past, indent=4, sort_keys=True)
+
+    # TODO: Hier muss es noch weiter gehen. Siehe
+    # https://github.com/marians/cologne-ris-scraper/issues/8
 
 
 def save_temp_file(data):
@@ -505,7 +507,8 @@ def file_sha1(path):
     sha = hashlib.sha1()
     content = open(path, 'r').read()
     sha.update(content)
-    return sha.hexdigest()
+    hexdig = sha.hexdigest()
+    return hexdig
 
 
 def file_type(path):
@@ -558,6 +561,7 @@ def get_attachments(url, forms_list):
             STATS['attachments_loaded'] += 1
             # Datei erst mal temporaer ablegen
             temp_path = save_temp_file(data)
+            ret[attachment_id]['sha1_checksum'] = file_sha1(temp_path)
             # Datei prüfen
             ftype = file_type(temp_path)
             if ftype != ret[attachment_id]['attachment_mimetype']:
@@ -572,8 +576,7 @@ def get_attachments(url, forms_list):
                 old_stat = os.stat(full_filepath)
                 new_stat = os.stat(temp_path)
                 if old_stat.st_size == new_stat.st_size:
-                    sha = file_sha1(full_filepath)
-                    if sha == file_sha1(temp_path):
+                    if ret[attachment_id]['sha1_checksum'] == file_sha1(full_filepath):
                         overwrite = False
                         if options.verbose:
                             print "Datei", full_filepath, "bleibt unverändert"
@@ -847,13 +850,17 @@ if __name__ == '__main__':
                       dest="submission_id", type="int")
     parser.add_option("--request", help="Numerische ID eines einzelnen Antrags, der gescraped werden soll",
                       dest="request_id", type="int")
+    parser.add_option("--database", help="Name der zu verwendenden Datenbank", dest="database")
     (options, args) = parser.parse_args()
 
     # Monate und Jahre in Listen umwandeln
     years = list_option(options.years)
     months = list_option(options.months)
 
-    db = DataStore(config.DBNAME, config.DBHOST, config.DBUSER, config.DBPASS)
+    dbname = config.DBNAME
+    if options.database:
+        dbname = options.database
+    db = DataStore(dbname, config.DBHOST, config.DBUSER, config.DBPASS)
 
     if options.session_id:
         get_session_details(options.session_id)
