@@ -34,23 +34,12 @@ import urllib2
 from scrapemark import scrape
 import mechanize
 from datastore import DataStore
+from queue import Queue
 import subprocess
 from optparse import OptionParser
 import datetime
 import hashlib
 import json
-
-# Hier drin werden Statistiken gesammelt
-STATS = {
-    'bytes_loaded': 0,
-    'attachments_loaded': 0,
-    'attachments_new': 0,
-    'attachments_replaced': 0
-}
-
-# Queue für abzurufende Vorlagen und Anträge
-submission_queue = []
-request_queue = []
 
 
 def shuffle(l):
@@ -62,16 +51,14 @@ def shuffle(l):
 
 def result_string(string):
     """
-        Gibt für die vielen vorhandenen Schreibweisen für das Resultat eines
-        Antrags, einer Anfrage etc. einen normalisierten String aus.
-        Der übergebene Parameter muss ein Unicode-String sein.
-        Ist für den übergebenen String keine Schreibweise hinterlegt, wird
-        das Programm mit einer Fehlermeldung abgebrochen.
+    Gibt für die vielen vorhandenen Schreibweisen für das Resultat eines
+    Antrags, einer Anfrage etc. einen normalisierten String aus.
+    Der übergebene Parameter muss ein Unicode-String sein.
+    Ist für den übergebenen String keine Schreibweise hinterlegt, wird
+    das Programm mit einer Fehlermeldung abgebrochen.
     """
-    if string in config.RESULT_TYPES:
+    if string is not None and string != '':
         return config.RESULT_TYPES[string]
-    print >> sys.stderr, "ERROR: Unknown result type string", [string]
-    sys.exit()
 
 
 def cleanup_identifier_string(string):
@@ -282,10 +269,10 @@ def get_agenda_and_attachments(session_id, html):
     # in Queue ablegen
     if submission_links is not None:
         for submission_id in submission_links:
-            submission_queue.append(submission_id)
+            submission_queue.add(submission_id)
     if request_links is not None:
         for request_id in request_links:
-            request_queue.append(request_id)
+            request_queue.add(request_id)
     if options.verbose:
         print "Vorlagen in Warteschlange:", len(submission_queue)
         print "Anträge in Warteschlange:", len(request_queue)
@@ -410,7 +397,7 @@ def get_document_details(dtype, id):
         </table>
         ''', html)
     if options.verbose:
-        print "Anhänge:", attachments
+        print "Anhänge:", json.dumps(attachments, indent=4)
     if attachments is not None:
         forms = []
         for form in attachments:
@@ -436,52 +423,51 @@ def get_document_details(dtype, id):
         if not options.simulate:
             db.save_rows('submissions', data, ['submission_id'])
 
-    # Lade Beratungsfolge.
-    # Zukünftige Beratung
-    top_future = scrape('''
-        {*
-            <tr>
-                <td>{{ [].date }}</a></td>
-                <td>{{ [].committee_name }}</td>
-                <td>{{ [].top }}</td>
-                <td>{{ [].role }}</td>
-                <td>
-                {*
-                    <a href="javascript:document.{{ [].[attachment].formname }}.submit();">{{ [].[attachment].linktitle }}</a>
-                *}
-                </td>
-            </tr>
-        *}
-        ''', html)
-    # Aufraeumarbeiten, weil das Matching auf beide Tabellen zutrifft
-    if top_future is not None:
-        for n in range(0, len(top_future)):
-            if 'docs' in top_future[n] and 'Dokumenttyp' not in top_future[n]['docs']:
-                top_future[n] = None
-
-    # Vergangene Beratung
+    # Auslesen der bisherigen Beratungsfolge
+    # Hier bekommen wir Informationen über die Verknüpfung zwischen diesem Dokument
+    # und Tagesordnungspunkten, in denen es behandelt wurde (agendaitems2submissions bzw.
+    # agendaitems2requests). Außerdem werden die Tagesordnungspunkte selbst angelegt.
     top_past = scrape('''
         {*
             <tr>
-                <td><a href="to0040.asp?__ksinr={{ [].session_id|int }}&amp;toselect={{ [].agendaitem_id|int }}">{{ [].date }}</a></td>
+                <td><a href="to0040.asp?__ksinr={{ [].session_id|int }}&amp;toselect={{ [].agendaitem_id }}">{{ [].date }}</a></td>
                 <td>{{ [].committee_name }}</td>
-                <td>{{ [].top }}</td>
+                <td>{{ [].agendaitem_identifier }}</td>
                 <td>{{ [].role }}</td>
-                <td>{{ [].result }}</td>
-                <td>
-                {*
-                    <a href="javascript:document.{{ [].[attachment].formname }}.submit();">{{ [].[attachment].linktitle }}</a>
-                *}
-                </td>
+                <td>{{ [].agendaitem_result }}</td>
+                <td/>
             </tr>
         *}
         ''', html)
     #debug
-    #print "Beratungsfolge Zukunft:", json.dumps(top_future, indent=4, sort_keys=True)
-    #print "Beratungsfolge Vergangenheit:", json.dumps(top_past, indent=4, sort_keys=True)
+    if options.verbose:
+        print "Beratungsfolge Vergangenheit: %d Eintraege: %s" % (len(top_past),
+            json.dumps(top_past, indent=4, sort_keys=True))
 
-    # TODO: Hier muss es noch weiter gehen. Siehe
-    # https://github.com/marians/cologne-ris-scraper/issues/8
+    # Nachverarbeitung der Tagesordnungspunkte
+    if top_past is not None and len(top_past) > 0:
+        insert_tops = []
+        for top in top_past:
+            newtop = {
+                'agendaitem_id': int(top['agendaitem_id']),
+                'session_id': int(top['session_id']),
+                'agendaitem_identifier': top['agendaitem_identifier'],
+                'agendaitem_result': result_string(top['agendaitem_result'])
+            }
+            insert_tops.append(newtop)
+        # Tagesordnungspunkte schreiben
+        if not options.simulate:
+            db.save_rows('agendaitems', insert_tops, ['agendaitem_id'])
+        # Verknuepfungen schreiben
+        table_name = 'agendaitems2%ss' % dtype  # agendaitems2submissions oder agendaitems2requests
+        docid_field_name = '%s_id' % dtype      # submission_id oder request_id
+        for top in insert_tops:
+            dataset = {
+                'agendaitem_id': int(top['agendaitem_id']),
+                docid_field_name: id
+            }
+            if not options.simulate:
+                db.save_rows(table_name, dataset, ['agendaitem_id', docid_field_name])
 
 
 def save_temp_file(data):
@@ -755,7 +741,7 @@ def get_cache_path(formname):
 def get_text_from_pdf(path):
     """Extrahiere den Text aus einer PDF-Datei"""
     text = ''
-    cmd = config.PDFTOTEXT_CMD + ' ' + path + ' -'
+    cmd = config.PDFTOTEXT_CMD + ' -enc UTF-8 ' + path + ' -'
     text, error = subprocess.Popen(
         cmd.split(' '), stdout=subprocess.PIPE,
         stderr=subprocess.PIPE).communicate()
@@ -764,8 +750,9 @@ def get_text_from_pdf(path):
         print >> sys.stderr, error
     if text == '':
         return None
-    else:
-        return text.strip().decode('utf-8')
+    text = text.strip()
+    text = text.decode('utf-8')
+    return text
 
 
 def scrape_incomplete_datasets():
@@ -804,15 +791,20 @@ def scrape_sessions(years, months):
 
 def scrape_from_queue():
     """
-    Arbeit die submission_queue und die request_queue ab.
+    Arbeitet die session_queue, submission_queue, request_queue ab. Damit
+    werden Dokumente und Sitzungen, die zuvor in die Warteschlange gelegt wurden,
+    gescrapet.
     """
-    while (len(submission_queue)):
-        submission_id = submission_queue.pop()
+    while session_queue.has_next():
+        session_id = session_queue.get()
+        get_session_details(session_id)
+    while submission_queue.has_next():
+        submission_id = submission_queue.get()
         if options.verbose:
             print "Scrape Vorlage aus Warteschlange:", submission_id, ", verbleiben", len(submission_queue)
         get_document_details('submission', submission_id)
-    while (len(request_queue)):
-        request_id = request_queue.pop()
+    while request_queue.has_next():
+        request_id = request_queue.get()
         if options.verbose:
             print "Scrape Antrag aus Warteschlange:", request_id, ", verbleiben", len(request_queue)
         get_document_details('request', request_id)
@@ -833,6 +825,20 @@ def print_stats():
         print k, ': ', STATS[k]
 
 if __name__ == '__main__':
+
+    # Hier drin werden Statistiken gesammelt
+    STATS = {
+        'bytes_loaded': 0,
+        'attachments_loaded': 0,
+        'attachments_new': 0,
+        'attachments_replaced': 0
+    }
+
+    # Queue für abzurufende Vorlagen, Anträge und Sessions
+    submission_queue = Queue()
+    request_queue = Queue()
+    session_queue = Queue()
+
     parser = OptionParser()
     parser.add_option("-y", "--years", dest="years",
                       default=str(datetime.date.today().year),
