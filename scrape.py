@@ -315,6 +315,8 @@ def get_agenda_and_attachments(session_id, html):
                 if not options.simulate:
                     db.save_rows('sessions2attachments', dataset, ['session_id', 'attachment_id'])
         if len(attachments_queue) > 0:
+            if options.verbose:
+                print "Attachments zum Download von", get_session_detail_url(session_id), ":", attachments_queue
             get_attachments(get_session_detail_url(session_id), attachments_queue)
 
 
