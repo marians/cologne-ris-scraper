@@ -124,6 +124,7 @@ def get_session_details(id):
     url = get_session_detail_url(id)
     print "Lade Sitzung", id, url
     html = urllib2.urlopen(url).read()
+    html = html.replace('&nbsp;', ' ')
     data = {}
 
     data['session_id'] = id
@@ -144,14 +145,18 @@ def get_session_details(id):
         ''', html)
 
     date_time = scrape('''
-        <tr><td>Datum und Uhrzeit:</td><td>{{ datum }}, {{zeit}}&nbsp;Uhr</td></tr>
+        <tr><td>Datum und Uhrzeit:</td><td>{{ datum }}, {{zeit}}</td></tr>
         ''', html)
 
-    if date_time['datum'] is not None:
+    if 'datum' in date_time and date_time['datum'] is not None:
         data['session_date'] = get_date(date_time['datum'].strip())
     else:
         print >> sys.stderr, "ERROR: No date found for Session " + str(id)
-    (starttime, endtime) = get_start_end_time(date_time['zeit'])
+    starttime = None
+    endtime = None
+    if 'zeit' in date_time and date_time['zeit'] is not None:
+        date_time['zeit'] = date_time['zeit'].replace(' Uhr', '')
+        (starttime, endtime) = get_start_end_time(date_time['zeit'])
     data['session_time_start'] = starttime
     data['session_time_end'] = endtime
 
@@ -640,6 +645,9 @@ def get_start_end_time(string):
     Normalisiert Anfangs- und End-Zeitangabe zu ISO-Zeit-Tupel.
     Z.B. '15 bis 16:25' => ('15:00', '16:25')
     """
+    string = string.strip()
+    if string == '':
+        return (None, None)
     parts = string.split(" bis ")
     if len(parts[0]) == 2:
         parts[0] += ':00'
