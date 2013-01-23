@@ -358,6 +358,8 @@ def get_document_details(dtype, id):
     Scrapet die Detailseite eines Antrags (request) oder einer
     Vorlage (submission)
     """
+    if options.verbose:
+        print "get_document_details('%s', %d) aufgerufen" % (dtype, id)
     if int(id) == 0:
         print >> sys.stderr, "Fehler: Dokumenten-ID ist 0."
         return
