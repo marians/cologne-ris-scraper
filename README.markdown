@@ -1,4 +1,9 @@
-#Scraper für das Ratsinformationssystem von Köln
+# AKTUELLER HINWEIS
+
+Diese Software wird demnächst durch den Nachfolger [Scrape-A-RIS](https://github.com/marians/scrape-a-ris) abgelöst. Scrape-A-RIS wird, im Gegensatz zu dieser Software nicht nur für Köln, sondern auch für weitere Instanzen vo Somacos SessionNet einsetzbar sein.
+
+
+# Scraper für das Ratsinformationssystem von Köln
 
 Dies ist ein Scraper für die Daten im Ratsinformationssystem (RIS) der Stadt Köln.
 
