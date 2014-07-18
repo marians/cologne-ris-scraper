@@ -1,0 +1,10 @@
+121798: 356 von 1929 Zeichen - 18.5 %
+129244: 403 von 1181 Zeichen - 34.1 %
+292011: 182 von 1041 Zeichen - 17.5 %
+344624: 383 von 1591 Zeichen - 24.1 %
+345174: 192 von 948 Zeichen - 20.3 %
+345458: 140 von 1516 Zeichen - 9.2 %
+345460: 194 von 1424 Zeichen - 13.6 %
+--------------------------------------------------------
+Mittelwert: 19.6 %
+Standardabweichung: 7.4
