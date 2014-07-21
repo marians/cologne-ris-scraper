@@ -1,0 +1,8 @@
+Verwendete OmniPage-Version: Omnipage Ultimate 19, DocuDirect
+
+Die Dateien wurden über DokuDirect erzeugt. Alle Einstellungen auf Standard, außer:
+- Keine Benutzereingaben, kein Benutzerwörterbuch
+- Professionelles Wörterbuch "Deutsch - Recht" aktiviert
+- Ausgabeformat: Unicode-Text
+
+Anschließend wurden die Dateien per "iconv -f UTF-16 -t UTF-8" in UTF-8 konvertiert.
